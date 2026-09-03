@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模拟股票交易小游戏</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", Arial, sans-serif;
+    background: #0f151f;
+    color: #d4d9e3;
+    user-select: none;
+    overflow: hidden;
+    height: 100vh;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* 顶部工具栏 */
+  .topbar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 12px; background: #161d2c; border-bottom: 1px solid #283246;
+    font-size: 13px;
+  }
+  .group { display: flex; align-items: center; gap: 4px; }
+  .group + .group { margin-left: 10px; padding-left: 10px; border-left: 1px solid #2a3447; }
+  .label { color: #7a8499; font-size: 12px; margin-right: 4px; }
+  button.btn {
+    background: #222c40; color: #d4d9e3; border: 1px solid #2f3a52;
+    padding: 8px 14px; border-radius: 4px; cursor: pointer; font-size: 14px;
+    transition: .15s;
+  }
+  .ind-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+  .ind-row .btn { padding: 4px 10px; font-size: 12px; }
+  button.btn:hover { background: #2c3a55; border-color: #4a5a78; }
+  button.btn.active { background: #2f6fed; border-color: #4a82ff; color: #fff; }
+  button.btn:disabled { opacity: .4; cursor: not-allowed; }
+  /* 周期按钮：蓝色系 */
+  button.btn.tf { background: #1e2a40; border-color: #2f3f5a; color: #c4d0e6; }
+  button.btn.tf:hover { background: #2a3a55; }
+  button.btn.tf.active { background: #2f6fed; border-color: #4a82ff; color: #fff; }
+  /* 杠杆按钮：橙色系 */
+  button.btn.lev { background: #2a2018; border-color: #4a3320; color: #e0b890; }
+  button.btn.lev:hover { background: #3a2c20; }
+  button.btn.lev.active { background: #f5a623; border-color: #ffb84a; color: #1a1208; font-weight: 600; }
+  /* 做多按钮：红色（买入开仓） */
+  button.btn.long { background: #8c2626; border-color: #c04a4a; color: #ffd9d9; }
+  button.btn.long:hover { background: #a53030; }
+  /* 做空按钮：绿色（卖出开仓） */
+  button.btn.short { background: #1c5e3a; border-color: #2a8c52; color: #b6f0c8; }
+  button.btn.short:hover { background: #257a4a; }
+  button.btn.flat { background: #4a4a52; border-color: #6a6a72; }
+  /* 下一根按钮：蓝色加大加粗，突出辨识度 */
+  button.btn.next { background: #2f6fed; border-color: #4a82ff; color: #fff; font-weight: 700; padding: 12px; font-size: 15px; letter-spacing: 2px; }
+  /* 仓位选择按钮：紫色系（顶栏，紧随杠杆） */
+  button.btn.pos { background: #241d33; border-color: #4a3a63; color: #cbb8e8; padding: 8px 14px; font-size: 14px; }
+  button.btn.pos:hover { background: #332a48; }
+  button.btn.pos.active { background: #8e44ad; border-color: #b06ad0; color: #fff; font-weight: 600; }
+  /* 顶部放大的价格与涨跌率 */
+  .price-big { font-size: 26px; font-weight: 700; color: #e6e9f0; line-height: 1; font-variant-numeric: tabular-nums; }
+  .chg-big { font-size: 20px; font-weight: 700; line-height: 1; margin-left: 10px; font-variant-numeric: tabular-nums; }
+  .info { color: #9aa4b8; font-size: 12px; }
+  .info b { color: #e6e9f0; }
+  .up { color: #ff4d4f; }   /* 中国习惯红涨 */
+  .down { color: #2dbf6e; } /* 绿跌 */
+
+  /* 主体 */
+  .main { display: flex; flex: 1; min-height: 0; }
+  .chart-wrap { flex: 1; position: relative; min-width: 0; }
+  canvas#chart { display: block; width: 100%; height: 100%; background: #0f151f; cursor: crosshair; }
+  /* 图表右上角价格浮层（放大价格+涨跌率） */
+  .price-overlay { position: absolute; top: 8px; right: 70px; display: flex; align-items: center; padding: 6px 12px; background: rgba(15,21,31,.78); border: 1px solid #283246; border-radius: 6px; z-index: 5; pointer-events: none; }
+
+  /* 右侧面板 */
+  .side {
+    width: 260px; padding: 10px; background: #131a28; border-left: 1px solid #283246;
+    display: flex; flex-direction: column; gap: 10px; font-size: 13px; overflow-y: auto;
+  }
+  .panel { background: #1a2233; border: 1px solid #2a3447; border-radius: 6px; padding: 8px 10px; }
+  .panel h3 { font-size: 12px; color: #7a8499; margin-bottom: 6px; font-weight: 500; }
+  .row { display: flex; justify-content: space-between; padding: 2px 0; }
+  .row .k { color: #9aa4b8; }
+  .row .v { color: #e6e9f0; font-variant-numeric: tabular-nums; }
+  .ops { display: flex; flex-direction: column; gap: 6px; }
+  .ops .btn { padding: 9px; font-size: 14px; }
+
+  /* 结算遮罩 */
+  .mask {
+    position: absolute; inset: 0; background: rgba(0,0,0,.7);
+    display: none; align-items: center; justify-content: center; z-index: 10;
+  }
+  .mask.show { display: flex; }
+  .dialog {
+    background: #1a2233; border: 1px solid #2f3a52; border-radius: 8px;
+    padding: 24px 30px; min-width: 320px; text-align: center;
+  }
+  .dialog h2 { margin-bottom: 14px; font-size: 20px; }
+  .dialog .big { font-size: 32px; font-weight: 700; margin: 10px 0; font-variant-numeric: tabular-nums; }
+  .dialog .sub { color: #9aa4b8; font-size: 13px; margin: 4px 0; }
+  .dialog .btn { margin-top: 16px; padding: 9px 22px; font-size: 14px; }
+
+  .hint { color: #6c7688; font-size: 11px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 顶部：日K进度最左侧，右侧为放大价格+涨跌率 -->
+  <div class="topbar">
+    <div class="group">
+      <span class="info">日K进度: <b id="dayProg">0/60</b></span>
+    </div>
+    <div class="group">
+      <span class="label">周期</span>
+      <button class="btn tf" data-tf="M">月</button>
+      <button class="btn tf" data-tf="W">周</button>
+      <button class="btn tf active" data-tf="D">日</button>
+      <button class="btn tf" data-tf="240">4h</button>
+      <button class="btn tf" data-tf="60">1h</button>
+      <button class="btn tf" data-tf="30">30m</button>
+      <button class="btn tf" data-tf="15">15m</button>
+    </div>
+    <div class="group">
+      <span class="label">杠杆</span>
+      <button class="btn lev active" data-lev="1">1x</button>
+      <button class="btn lev" data-lev="5">5x</button>
+      <button class="btn lev" data-lev="10">10x</button>
+      <button class="btn lev" data-lev="20">20x</button>
+    </div>
+    <div class="group">
+      <span class="label">仓位</span>
+      <button class="btn pos" data-frac="0.25">1/4</button>
+      <button class="btn pos" data-frac="0.333333">1/3</button>
+      <button class="btn pos" data-frac="0.5">1/2</button>
+      <button class="btn pos active" data-frac="1">全仓</button>
+    </div>
+  </div>
+
+  <!-- 主体 -->
+  <div class="main">
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+      <!-- 图表右上角：放大价格 + 涨跌率浮层 -->
+      <div class="price-overlay">
+        <span class="price-big" id="curPrice">--</span>
+        <span class="chg-big" id="dayChg">--</span>
+      </div>
+      <!-- 开局弹窗 -->
+      <div class="mask show" id="startMask">
+        <div class="dialog">
+          <h2>模拟股票交易</h2>
+          <div class="sub" id="dataStatus">正在随机挑选A股并加载真实行情…</div>
+          <div class="sub">规则：随机一只A股的真实历史行情，走满 60 根日K结算，保证金率 ≤ 50% 爆仓</div>
+          <div class="sub">操作：选仓位 → 做多/做空 → 自动推进下一根；可同方向加仓</div>
+          <div class="sub hint">股票身份已隐藏，结算时揭晓 · 数据来源：东方财富</div>
+          <div style="display:flex;justify-content:center;gap:10px;margin-top:6px;">
+            <button class="btn next" id="startBtn" disabled>开始交易</button>
+            <button class="btn" id="retryBtn" style="display:none;">重试加载行情</button>
+          </div>
+        </div>
+      </div>
+      <div class="mask" id="mask">
+        <div class="dialog">
+          <h2 id="dlgTitle">本局结算</h2>
+          <div class="big" id="dlgRet">--</div>
+          <div class="sub" id="dlgStock" style="font-size:16px;font-weight:700;color:#e6e9f0;"></div>
+          <div class="sub" id="dlgRange"></div>
+          <div class="sub" id="dlgMkt"></div>
+          <div class="sub" id="dlgCmp" style="font-weight:600;"></div>
+          <div class="sub" id="dlgSub"></div>
+          <div class="sub" id="dlgSub2"></div>
+          <button class="btn next" id="againBtn">再来一局</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧 -->
+    <div class="side">
+      <div class="panel">
+        <h3>资金</h3>
+        <div class="row"><span class="k">总资产</span><span class="v" id="total">1,000,000.00</span></div>
+        <div class="row"><span class="k">现金</span><span class="v" id="cash">1,000,000.00</span></div>
+        <div class="row"><span class="k">持仓</span><span class="v" id="pos">空仓</span></div>
+        <div class="row"><span class="k">开仓价</span><span class="v" id="entry">--</span></div>
+        <div class="row"><span class="k">浮动盈亏</span><span class="v" id="pnl">0.00</span></div>
+        <div class="row"><span class="k">保证金占用</span><span class="v" id="margin">0.00</span></div>
+        <div class="row"><span class="k">保证金率</span><span class="v" id="mr">--</span></div>
+        <div class="row"><span class="k">收益率</span><span class="v" id="ret">0.00%</span></div>
+      </div>
+
+      <div class="panel">
+        <h3>操作</h3>
+        <div class="ops">
+          <button class="btn long" id="longBtn" disabled>做多（买入）</button>
+          <button class="btn short" id="shortBtn" disabled>做空（卖出）</button>
+          <button class="btn flat" id="flatBtn" disabled>平仓</button>
+          <button class="btn next" id="nextBtn" disabled>下一根 →</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>说明</h3>
+        <div class="hint">
+          · 每局随机挑选一只A股的真实历史行情（前复权日K，数据来自东方财富），股票身份结算时揭晓。<br>
+          · 历史100根日K仅供参考，点「开始交易」后下单生效。<br>
+          · 支持做多/做空：按顶栏所选仓位（杠杆旁）比例开仓，可同方向加仓（开仓价加权平均）。<br>
+          · 「下一根」按当前周期推进，走满60根日K结算；手续费0.1%（买卖各收）、滑点0.1%。<br>
+          · 杠杆越高风险越大；保证金率≤50%即爆仓终结本局。<br>
+          · 上涨空心红K，下跌实心绿K；主图可切 MA/BOLL，副图可切 VOL/MACD。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ===================== 配置 ===================== */
+const CFG = {
+  startPrice: 100,        // 起始价
+  initCash: 1000000,      // 初始资金 100万
+  histDayBars: 100,       // 历史日K根数
+  settleDayBars: 60,      // 结算日K根数
+  feeRate: 0.001,         // 手续费 0.1%
+  slipRate: 0.001,        // 滑点 0.1%
+  liqRatio: 0.5,          // 维持保证金率 50%
+  tfs: { M:2016, W:480, D:96, '240':16, '60':4, '30':2, '15':1 }, // 周期→tick数
+  dayTicks: 96,           // 一日tick数
+  maPeriods: [5,10,20],   // 均线周期
+};
+
+/* ===================== 状态 ===================== */
+let G = null; // 全局游戏状态
+
+/* ===================== 真实行情（东方财富免费API · JSONP跨域） ===================== */
+const EM_LIST_TTL = 7*24*3600*1000;   // 股票列表缓存7天
+const EM_LIST_KEY = 'em_stocklist_v1';
+
+/* JSONP：借助 <script> 标签绕过浏览器跨域限制（支持自定义回调参数名）。
+   兼容两种回调风格：调用式 cb({data}) 与赋值式 cb={data}（腾讯 _var 为赋值式） */
+function jsonp(url, opts){
+  opts = opts || {};
+  const timeout = opts.timeout || 8000;
+  const param = opts.param || 'cb';
+  return new Promise((resolve, reject)=>{
+    const cb = 'jp_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+    const s = document.createElement('script');
+    let settled = false;
+    const cleanup = ()=>{
+      try{ clearTimeout(timer); }catch(e){}
+      try{ delete window[cb]; }catch(e){ window[cb] = undefined; }
+      if(s.parentNode) s.parentNode.removeChild(s);
+    };
+    const finish = (ok, data)=>{
+      if(settled) return;
+      settled = true; cleanup();
+      ok ? resolve(data) : reject(new Error(data || '加载失败'));
+    };
+    const timer = setTimeout(()=> finish(false, '请求超时'), timeout);
+    const callFn = (data)=> finish(true, data);
+    try{
+      Object.defineProperty(window, cb, {
+        configurable: true,
+        get: function(){ return callFn; },          // 调用式：返回接收数据的函数
+        set: function(v){ finish(true, v); }        // 赋值式：直接收到数据对象
+      });
+    }catch(e){ window[cb] = callFn; }
+    s.onerror = ()=> finish(false, '网络错误');
+    s.src = url + (url.indexOf('?')>=0 ? '&' : '?') + param + '=' + cb;
+    document.head.appendChild(s);
+  });
+}
+
+/* 多主机竞速（任一成功即返回） */
+function jsonpRace(paths, hosts, opts){
+  hosts = hosts || ['https://push2delay.eastmoney.com', 'https://push2.eastmoney.com'];
+  return new Promise((resolve, reject)=>{
+    let pending = hosts.length, done = false;
+    let firstErr = null;
+    hosts.forEach(h=>{
+      jsonp(h + paths, opts).then(d=>{ if(!done){ done = true; resolve(d); } })
+        .catch(e=>{ if(!firstErr) firstErr = e; if(--pending === 0 && !done) reject(firstErr); });
+    });
+  });
+}
+
+/* 多任务竞速：取第一个非空(non-null)结果 */
+function firstNonNull(ps){
+  return new Promise((resolve, reject)=>{
+    let pending = ps.length, done = false;
+    const fail = ()=>{ if(--pending === 0 && !done){ done = true; reject(new Error('无有效数据')); } };
+    ps.forEach(p=> p.then(v=>{
+      if(v && !done){ done = true; resolve(v); } else if(!v) fail();
+    }).catch(fail));
+  });
+}
+
+/* 受限并发执行：n路worker依次消费任务，避免突发并发触发接口限流 */
+async function pooled(n, tasks){
+  const ret = new Array(tasks.length);
+  let i = 0;
+  async function worker(){
+    while(i < tasks.length){
+      const idx = i++;
+      try{ ret[idx] = await tasks[idx](); }catch(e){ ret[idx] = null; }
+    }
+  }
+  await Promise.all(Array.from({length: Math.max(1, Math.min(n, tasks.length))}, worker));
+  return ret;
+}
+
+/* 全量A股列表（沪深主板+创业板+科创板，剔除ST/退市/上市初期新股），localStorage缓存7天 */
+async function fetchStockList(){
+  try{
+    const c = JSON.parse(localStorage.getItem(EM_LIST_KEY) || 'null');
+    if(c && c.list && c.list.length > 100 && Date.now() - c.t < EM_LIST_TTL) return c.list;
+  }catch(e){}
+  const fs = 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23';
+  const q = '/api/qt/clist/get?po=0&np=1&fltt=2&invt=2&fid=f12&fs=' + fs + '&fields=f12,f13,f14';
+  // 先取第一页拿到总数，再受限并发（6路）拉取其余页（服务端每页上限100条）
+  const first = await jsonpRace(q + '&pn=1&pz=100');
+  const total = first && first.data ? first.data.total : 0;
+  const diff1 = first && first.data ? first.data.diff : null;
+  if(!diff1) throw new Error('列表接口无数据');
+  const arr1 = Array.isArray(diff1) ? diff1 : Object.keys(diff1).map(k=>diff1[k]);
+  const pages = Math.ceil(total / 100);
+  const rest = await pooled(6, Array.from({length: Math.max(0, pages-1)},
+    (_,i)=> ()=> jsonpRace(q + '&pn=' + (i+2) + '&pz=100')));
+  const list = [];
+  const push = (arr)=>{
+    for(const it of arr || []){
+      const code = it.f12, mkt = it.f13, name = it.f14;
+      if(!code || !name) continue;
+      if(/ST|退/.test(name)) continue;   // 剔除 ST / 退市整理
+      if(/^[NC]/.test(name)) continue;   // 剔除上市初期新股（N首日 / C前5日）
+      list.push({code: String(code), mkt: mkt, name: String(name).replace(/\s+/g,'')});
+    }
+  };
+  push(arr1);
+  for(const d of rest){ if(d && d.data && d.data.diff) push(Array.isArray(d.data.diff) ? d.data.diff : Object.keys(d.data.diff).map(k=>d.data.diff[k])); }
+  if(list.length <= 100) throw new Error('股票列表拉取失败');
+  try{ localStorage.setItem(EM_LIST_KEY, JSON.stringify({t: Date.now(), list: list})); }catch(e){}
+  return list;
+}
+
+/* K线双数据源：
+   1) 东方财富 push2his（前复权，字段序：date,open,close,high,low,volume,amount）
+   2) 腾讯 ifzq（qfq前复权，字段序：date,open,close,high,low,volume）
+   竞速取先返回有效数据者（push2delay 主机虽通但不返回K线数据，故K线不用它） */
+function parseBarsEM(kl){
+  const bars = [];
+  for(const line of kl){
+    const a = line.split(',');
+    const b = {date: a[0], o: +a[1], c: +a[2], h: +a[3], l: +a[4], v: +a[5] || 0};
+    if(b.o > 0 && b.c > 0 && b.h >= b.l && b.l > 0) bars.push(b);
+  }
+  return bars.length ? bars : null;
+}
+async function fetchDailyKlineEM(secid){
+  const path = '/api/qt/stock/kline/get?secid=' + secid
+    + '&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57'
+    + '&klt=101&fqt=1&lmt=800&end=20500101';
+  const d = await jsonp('https://push2his.eastmoney.com' + path, {timeout: 7000});
+  const kl = d && d.data && d.data.klines;
+  return (kl && kl.length) ? parseBarsEM(kl) : null;
+}
+async function fetchDailyKlineTX(code, mkt){
+  const symbol = (mkt === 1 ? 'sh' : 'sz') + code;
+  const url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=' + symbol + ',day,,,800,qfq';
+  const d = await jsonp(url, {timeout: 7000, param: '_var'});
+  const node = d && d.data && d.data[symbol];
+  if(!node) return null;
+  const arr = node.qfqday || node.day;
+  if(!arr || !arr.length) return null;
+  const bars = [];
+  for(const r of arr){
+    if(!r || r.length < 6) continue;
+    const b = {date: r[0], o: +r[1], c: +r[2], h: +r[3], l: +r[4], v: +r[5] || 0};
+    if(b.o > 0 && b.c > 0 && b.h >= b.l && b.l > 0) bars.push(b);
+  }
+  return bars.length ? bars : null;
+}
+async function fetchDailyKline(secid, code, mkt){
+  return firstNonNull([
+    fetchDailyKlineEM(secid),
+    fetchDailyKlineTX(code, mkt),
+  ]);
+}
+
+/* 随机挑一只股票 + 随机截取行情窗口（前100根做历史 + 后60根做交易区间） */
+async function loadRealMarket(){
+  const list = await fetchStockList();
+  for(let i=0; i<12; i++){
+    const pick = list[Math.floor(Math.random() * list.length)];
+    try{
+      const bars = await fetchDailyKline(pick.mkt + '.' + pick.code, pick.code, pick.mkt);
+      if(bars && bars.length >= 170){
+        const startIdx = 100 + Math.floor(Math.random() * (bars.length - 160));
+        return {pick: pick, bars: bars, startIdx: startIdx};
+      }
+    }catch(e){ /* 换一只重试 */ }
+  }
+  throw new Error('多次尝试均未获取到有效行情');
+}
+
+/* 行情分类：股灾 / 妖股 / 冲高回落 / 趋势上涨 / 趋势下跌 / 横盘（按交易日序列） */
+function classifyMarket(days){
+  const chg = days[days.length-1].c / days[0].o - 1;   // 区间涨跌幅
+  let hi = -Infinity, lo = Infinity, peak = days[0].c;
+  for(const b of days){
+    if(b.h > hi) hi = b.h;
+    if(b.l < lo) lo = b.l;
+    if(b.c > peak) peak = b.c;
+  }
+  const range = (hi - lo) / lo;                        // 区间振幅
+  const maxGain = peak / days[0].o - 1;                // 期间最大涨幅
+  let dd = 0, pk = days[0].c, mdd = 0;                 // 最大回撤（按收盘）
+  for(const b of days){
+    if(b.c > pk) pk = b.c;
+    dd = (pk - b.c) / pk;
+    if(dd > mdd) mdd = dd;
+  }
+  if(chg <= -0.20) return '股灾';
+  if(range >= 0.50) return '妖股';
+  if(maxGain >= 0.20 && chg < 0.10) return '冲高回落';
+  if(chg >= 0.15) return '趋势上涨';
+  if(chg <= -0.10) return '趋势下跌';
+  return '横盘';
+}
+
+/* 真实日K → 每日96个15分钟tick：日内路径=线性插值+布朗桥噪声，拉伸至触及当日最高/最低，
+   保证按日聚合后 开/高/低/收 与真实日K完全一致 */
+function realBarsToTicks(daily){
+  const n = CFG.dayTicks, ticks = [];
+  for(const b of daily){
+    const path = new Array(n+1);
+    path[0] = b.o; path[n] = b.c;
+    if(b.h - b.l < 1e-9){
+      for(let i=1; i<n; i++) path[i] = b.o;            // 一字板
+    }else{
+      const L = i => b.o + (b.c - b.o) * i / n;
+      const w = new Array(n+1).fill(0);
+      let acc = 0;
+      for(let i=1; i<n; i++){ acc += (Math.random()-0.5)*2; w[i] = acc; }
+      const wEnd = w[n-1];
+      for(let i=1; i<n; i++) w[i] -= wEnd * i / n;     // 布朗桥：首尾归零
+      let maxd = 1e-12, mind = -1e-12, iMax = 1, iMin = 1;
+      for(let i=1; i<n; i++){
+        if(w[i] > maxd){ maxd = w[i]; iMax = i; }
+        if(w[i] < mind){ mind = w[i]; iMin = i; }
+      }
+      const maxL = Math.max(b.o, b.c), minL = Math.min(b.o, b.c);
+      const sHi = (b.h - maxL) / maxd;
+      const sLo = (minL - b.l) / (-mind);
+      let s = Math.min(sHi, sLo);
+      s = Math.max(0.05, Math.min(s, 4));              // 限制拉伸幅度，避免失真
+      for(let i=1; i<n; i++){
+        let p = L(i) + s * w[i];
+        if(p > b.h) p = b.h;
+        if(p < b.l) p = b.l;
+        path[i] = p;
+      }
+      path[iMax] = b.h; path[iMin] = b.l;              // 确保触及当日最高/最低
+    }
+    path[0] = b.o; path[n] = b.c;
+    // 日成交量按 U 型分布到 tick（开盘/收盘密集，贴近A股分时特征）
+    const vw = []; let vsum = 0;
+    for(let i=1; i<=n; i++){
+      const t = i / n;
+      const wt = 1 + 1.2 * Math.pow(2 * Math.min(t, 1-t), 2) + Math.random() * 0.5;
+      vw.push(wt); vsum += wt;
+    }
+    for(let i=1; i<=n; i++){
+      const o = path[i-1], c = path[i];
+      ticks.push({o: o, c: c, h: Math.max(o,c), l: Math.min(o,c),
+                  v: Math.max(1, Math.round(b.v * vw[i-1] / vsum))});
+    }
+  }
+  return ticks;
+}
+
+async function newGame(autoStart){
+  G = {
+    ticks: [],            // {o,h,l,c,v} 15min tick 数组，但为简单存为单值price序列+独立vol生成
+    prices: [],           // 15min 收盘价序列（决定K线OHLC需要存o/h/l/c）
+    tickOHLC: [],         // 15min tick 的 {o,h,l,c,v}
+    curTickIdx: -1,       // 当前已生成到的tick索引（末根）
+    tradeStartTick: -1,    // 交易开始时的tick索引
+    tf: 'D',              // 当前查看周期
+    lev: 1,               // 当前杠杆
+    mainInd: 'MA',        // 主图指标 MA/BOLL
+    subInd: 'VOL',        // 副图指标 VOL/MACD
+    started: false,
+    over: false,
+    cash: CFG.initCash,   // 现金（含已实现盈亏，扣除保证金占用）
+    pos: 0,               // 持仓量（正多负空，0空仓）
+    entry: 0,             // 开仓均价
+    marginUsed: 0,        // 保证金占用
+    realized: 0,          // 已实现盈亏（统计用）
+    tradeCount: 0,        // 交易次数
+    posFrac: (parseFloat((document.querySelector('.btn.pos.active') || {dataset:{frac:'1'}}).dataset.frac)) || 1, // 买入仓位比例
+    loading: true,        // 真实行情加载中
+    real: null,           // 真实行情：{code,name,daily,tradeDays,marketRet,marketType}
+  };
+  // 弹窗与按钮初始状态（行情就绪前禁止开始）
+  document.getElementById('startMask').classList.add('show');
+  document.getElementById('dataStatus').textContent = '正在随机挑选A股并加载真实行情…';
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('retryBtn').style.display = 'none';
+  document.getElementById('nextBtn').disabled = true;
+  document.getElementById('longBtn').disabled = true;
+  document.getElementById('shortBtn').disabled = true;
+  document.getElementById('flatBtn').disabled = true;
+  draw();
+  // 拉取真实A股行情；失败则回退为模拟行情
+  try{
+    const r = await loadRealMarket();
+    const daily = r.bars.slice(r.startIdx - 100, r.startIdx + 60);  // 160根：100历史 + 60交易
+    G.real = {
+      code: r.pick.code, name: r.pick.name,
+      daily: daily, tradeDays: daily.slice(100),
+      marketRet: (daily[daily.length-1].c / daily[100].o - 1) * 100,   // 开盘买入持有收益
+    };
+    G.real.marketType = classifyMarket(G.real.tradeDays);
+    G.tickOHLC = realBarsToTicks(daily);
+    G.curTickIdx = G.tickOHLC.length - 1;
+    G.loading = false;
+    document.getElementById('dataStatus').textContent =
+      '真实A股行情已就绪（' + G.real.daily.length + '个交易日 · 股票结算时揭晓），准备好即可开战';
+    document.getElementById('startBtn').disabled = false;
+    updateUI(); draw();
+    if(autoStart) startTrade();
+  }catch(err){
+    G.loading = false;
+    document.getElementById('dataStatus').textContent = '行情加载失败（' + err.message + '），本局改用模拟行情';
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('retryBtn').style.display = '';
+    lastPrice = CFG.startPrice;
+    genTicks(CFG.histDayBars * CFG.dayTicks);
+    G.curTickIdx = G.tickOHLC.length - 1;
+    updateUI(); draw();
+    if(autoStart) startTrade();
+  }
+}
+
+/* ===================== 行情生成 ===================== */
+let lastPrice = CFG.startPrice;
+function genTicks(n){
+  if(G && G.real) return;   // 真实行情模式：tick已在开局一次性生成，禁止追加模拟数据
+  for(let i=0;i<n;i++){
+    // 随机游走，含轻drift与波动率簇
+    const vol = 0.006 + Math.random()*0.006;   // 0.6%~1.2% 每tick波动
+    const drift = (Math.random()-0.5)*0.001;
+    const o = lastPrice;
+    let c = o * (1 + drift + (Math.random()-0.5)*2*vol);
+    if(c < 0.5) c = 0.5;
+    let h = Math.max(o, c) * (1 + Math.random()*vol*0.6);
+    let l = Math.min(o, c) * (1 - Math.random()*vol*0.6);
+    const v = Math.round(500 + Math.random()*4500);
+    G.tickOHLC.push({o,h,l,c,v});
+    lastPrice = c;
+  }
+}
+
+/* 聚合：给定周期与结束tick索引，返回该周期K线数组（用于绘图，取最近N根） */
+function agg(tf, endIdx){
+  const step = CFG.tfs[tf];
+  // 对齐：使 endIdx 处于某根周期K线的末尾
+  // 周期K线 i 覆盖 tick [i*step, i*step+step-1]
+  // 这里以tick索引0为某周期起点对齐
+  const bars = [];
+  // 总根数（完整）
+  const totalBars = Math.floor((endIdx+1)/step);
+  // 限制绘图数量
+  const showBars = 140;
+  const startBar = Math.max(0, totalBars - showBars);
+  for(let b=startBar; b<totalBars; b++){
+    const s = b*step, e = s+step-1;
+    if(e > endIdx) break;
+    const t0 = G.tickOHLC[s];
+    let o=t0.o, h=t0.h, l=t0.l, c=G.tickOHLC[e].c, v=0;
+    for(let k=s;k<=e;k++){
+      const t=G.tickOHLC[k];
+      if(t.h>h) h=t.h;
+      if(t.l<l) l=t.l;
+      v+=t.v;
+    }
+    bars.push({o,h,l,c,v, idx:b, sTick:s, eTick:e});
+  }
+  return bars;
+}
+
+/* 当前最新价 */
+function curPrice(){ return G.tickOHLC[G.curTickIdx].c; }
+
+/* ===================== 推进 ===================== */
+function stepNext(){
+  if(!G.started || G.over) return;
+  const step = CFG.tfs[G.tf];
+  // 生成所需新tick
+  const need = G.curTickIdx + step + 1;
+  genTicks(need - G.tickOHLC.length);
+  G.curTickIdx = Math.min(G.curTickIdx + step, G.tickOHLC.length-1);
+  // 日K计数
+  const dayPassed = Math.floor((G.curTickIdx - G.tradeStartTick + 1) / CFG.dayTicks);
+  if(dayPassed >= CFG.settleDayBars){
+    settle('60根日K已走完');
+    return;
+  }
+  // 爆仓检查
+  checkLiquidation();
+  updateUI(); draw();
+}
+
+function startTrade(){
+  if(G.started || G.loading) return;   // 行情加载中禁止开始
+  G.started = true;
+  G.tradeStartTick = G.curTickIdx; // 从当前开始计日K
+  document.getElementById('startMask').classList.remove('show'); // 关闭开局弹窗
+  document.getElementById('nextBtn').disabled = false;
+  document.getElementById('longBtn').disabled = false;
+  updateUI(); draw();
+}
+
+/* ===================== 交易引擎 ===================== */
+function floatPnl(price){
+  if(G.pos===0) return 0;
+  return (price - G.entry) * G.pos; // pos正多负空
+}
+function totalAsset(price){
+  return G.cash + G.marginUsed + floatPnl(price); // cash已扣保证金，故加回
+}
+function marginRatio(price){
+  if(G.pos===0 || G.marginUsed===0) return Infinity;
+  // 净值 = 总资产 = 现金(扣保证金) + 冻结保证金 + 浮盈；与保证金占用比
+  return totalAsset(price) / G.marginUsed;
+}
+
+function doLong(){
+  // 做多买入：按左下角所选仓位比例开多（可同方向加仓）；持空仓时需先平仓
+  if(!G.started || G.over) return;
+  if(G.pos < 0) return; // 持空仓，禁止做多
+  const price = curPrice();
+  const execPrice = price * (1 + CFG.slipRate); // 买入+滑点
+  if(!openPosition(1, execPrice)) return;       // 现金不足，不动作
+  checkLiquidation();
+  updateUI(); draw();
+  // 买入后自动推进下一根
+  if(!G.over) stepNext();
+}
+
+function doShort(){
+  // 做空卖出：按左下角所选仓位比例开空（可同方向加仓）；持多仓时需先平仓
+  if(!G.started || G.over) return;
+  if(G.pos > 0) return; // 持多仓，禁止做空
+  const price = curPrice();
+  const execPrice = price * (1 - CFG.slipRate); // 卖出-滑点
+  if(!openPosition(-1, execPrice)) return;      // 现金不足，不动作
+  checkLiquidation();
+  updateUI(); draw();
+  // 开仓后自动推进下一根
+  if(!G.over) stepNext();
+}
+
+function openPosition(dir, price){
+  // 按所选仓位比例开仓：保证金 = 剩余现金 × 仓位比例（预留手续费），成功返回 true
+  const usable = G.cash * G.posFrac;
+  if(usable <= 1) return false;
+  // 保证金 m = usable/(1+lev*feeRate)，使 m+fee 恰好用完 usable
+  const m = usable / (1 + G.lev * CFG.feeRate);
+  const qty = m * G.lev / price;
+  if(qty <= 0) return false;
+  const fee = qty * price * CFG.feeRate;
+  // 同方向加仓：开仓价按数量加权平均
+  const oldAbs = Math.abs(G.pos);
+  G.entry = (G.entry * oldAbs + price * qty) / (oldAbs + qty);
+  G.pos += qty * dir;           // pos正多负空
+  G.cash -= (m + fee);          // 扣保证金+手续费
+  G.marginUsed += m;
+  G.tradeCount++;
+  return true;
+}
+
+function flatPosition(price){
+  if(G.pos===0) return;
+  // 平仓：返还保证金 + 浮盈 - 手续费
+  const fee = Math.abs(G.pos) * price * CFG.feeRate;
+  const pnl = floatPnl(price);
+  G.realized += pnl - fee;
+  G.cash += G.marginUsed + pnl - fee;
+  G.marginUsed = 0;
+  G.pos = 0;
+  G.entry = 0;
+  G.tradeCount++;
+}
+
+function checkLiquidation(){
+  if(G.pos===0) return;
+  const p = curPrice();
+  const mr = marginRatio(p);
+  if(mr <= CFG.liqRatio){
+    // 爆仓：强平，返还剩余净值（≥0）
+    const remain = Math.max(0, totalAsset(p));
+    G.realized += (remain - G.cash - G.marginUsed); // 记录已实现部分
+    G.cash = remain;
+    G.marginUsed = 0;
+    G.pos = 0;
+    G.entry = 0;
+    settle('保证金不足，爆仓强平！');
+  }
+}
+
+/* ===================== 结算 ===================== */
+function settle(reason){
+  G.over = true;
+  document.getElementById('nextBtn').disabled = true;
+  document.getElementById('longBtn').disabled = true;
+  document.getElementById('shortBtn').disabled = true;
+  document.getElementById('flatBtn').disabled = true;
+  // 强平未平仓位
+  if(G.pos!==0){
+    const p = curPrice();
+    const pnl = floatPnl(p);
+    G.realized += pnl;
+    G.cash = Math.max(0, G.cash + G.marginUsed + pnl);
+    G.marginUsed = 0; G.pos = 0; G.entry = 0;
+  }
+  const total = G.cash;
+  const ret = (total - CFG.initCash) / CFG.initCash * 100;
+  const mask = document.getElementById('mask');
+  document.getElementById('dlgTitle').textContent = reason;
+  const retEl = document.getElementById('dlgRet');
+  retEl.textContent = (ret>=0?'+':'') + ret.toFixed(2) + '%';
+  retEl.className = 'big ' + (ret>=0?'up':'down');
+  document.getElementById('dlgSub').textContent = '总资产: ' + fmt(total);
+  document.getElementById('dlgSub2').textContent = '交易次数: ' + G.tradeCount;
+  // 真实行情揭晓：股票名 / 区间 / 行情类型 / 与行情对比
+  const stEl = document.getElementById('dlgStock');
+  const rgEl = document.getElementById('dlgRange');
+  const mkEl = document.getElementById('dlgMkt');
+  const cpEl = document.getElementById('dlgCmp');
+  if(G.real){
+    const td = G.real.tradeDays;
+    stEl.textContent = '本局股票：' + G.real.name + '（' + G.real.code + '）';
+    rgEl.textContent = '区间：' + td[0].date + ' ~ ' + td[td.length-1].date + '（' + td.length + '个交易日）';
+    mkEl.innerHTML = '行情类型：<b style="color:#f5c864">' + G.real.marketType + '</b>'
+      + ' · 区间行情收益：<b class="' + (G.real.marketRet>=0?'up':'down') + '">'
+      + (G.real.marketRet>=0?'+':'') + G.real.marketRet.toFixed(2) + '%</b>（开盘买入持有）';
+    const diff = ret - G.real.marketRet;
+    cpEl.textContent = (diff>=0 ? '跑赢行情 ' : '跑输行情 ') + Math.abs(diff).toFixed(2) + ' 个百分点';
+    cpEl.style.color = diff>=0 ? '#ff9f43' : '#9aa4b8';
+  }else{
+    stEl.textContent = '本局为模拟行情（随机游走）';
+    rgEl.textContent = '--';
+    mkEl.textContent = '--';
+    cpEl.textContent = '--';
+  }
+  mask.classList.add('show');
+  updateUI();
+}
+
+/* ===================== UI ===================== */
+function fmt(n){ return Number(n).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+/* 上一根已完成日K的收盘价（涨跌率基准），开局第一天之前返回 null */
+function prevDayClose(){
+  const day = Math.floor(G.curTickIdx / CFG.dayTicks);   // 当前 tick 所在交易日序号
+  if(day <= 0) return null;
+  return G.tickOHLC[(day - 1) * CFG.dayTicks + CFG.dayTicks - 1].c;
+}
+
+function updateUI(){
+  if(!G || !G.tickOHLC.length) return;   // 行情未就绪时跳过（此时按钮均禁用）
+  const p = curPrice();
+  // 顶栏放大版价格（不带"当前价"标签）
+  document.getElementById('curPrice').textContent = p.toFixed(2);
+  // 涨跌率：以日K为基准（相对上一根已完成日K收盘价），红涨绿跌
+  const chgEl = document.getElementById('dayChg');
+  const pc = prevDayClose();
+  if(pc){
+    const chg = (p - pc) / pc * 100;
+    chgEl.textContent = (chg>=0?'+':'') + chg.toFixed(2) + '%';
+    chgEl.className = 'chg-big ' + (chg>=0?'up':'down');
+  } else {
+    chgEl.textContent = '--';
+    chgEl.className = 'chg-big';
+  }
+  // 日K进度
+  if(G.started){
+    const d = Math.floor((G.curTickIdx - G.tradeStartTick + 1) / CFG.dayTicks);
+    document.getElementById('dayProg').textContent = Math.min(d, CFG.settleDayBars) + '/' + CFG.settleDayBars;
+  } else {
+    document.getElementById('dayProg').textContent = '0/' + CFG.settleDayBars;
+  }
+  // 资金
+  const fp = floatPnl(p);
+  const total = totalAsset(p);
+  document.getElementById('total').textContent = fmt(total);
+  document.getElementById('cash').textContent = fmt(G.cash);
+  document.getElementById('pos').textContent = G.pos===0?'空仓':(G.pos>0?('多 '+fmtQty(G.pos)):('空 '+fmtQty(Math.abs(G.pos))));
+  document.getElementById('entry').textContent = G.pos===0?'--':G.entry.toFixed(2);
+  const pnlEl = document.getElementById('pnl');
+  pnlEl.textContent = (fp>=0?'+':'') + fmt(fp);
+  pnlEl.className = 'v ' + (fp>0?'up':(fp<0?'down':''));
+  document.getElementById('margin').textContent = fmt(G.marginUsed);
+  document.getElementById('mr').textContent = G.pos===0?'--':((marginRatio(p)*100).toFixed(1)+'%');
+  const ret = (total - CFG.initCash)/CFG.initCash*100;
+  const retEl = document.getElementById('ret');
+  retEl.textContent = (ret>=0?'+':'') + ret.toFixed(2) + '%';
+  retEl.style.color = ret>=0? '#ff4d4f':'#2dbf6e'; // 盈红亏绿
+  retEl.style.fontSize = '22px';
+  retEl.style.fontWeight = '700';
+  // 操作按钮状态：持多禁做空、持空禁做多、现金耗尽禁开仓
+  const canTrade = G.started && !G.over;
+  document.getElementById('longBtn').disabled = !canTrade || G.pos < 0 || G.cash <= 1;
+  document.getElementById('shortBtn').disabled = !canTrade || G.pos > 0 || G.cash <= 1;
+  document.getElementById('flatBtn').disabled = !canTrade || G.pos === 0;
+  document.getElementById('nextBtn').disabled = !canTrade;
+}
+function fmtQty(q){ return q>=1000? (q/1000).toFixed(2)+'k' : q.toFixed(0); }
+
+/* ===================== Canvas 绘图 ===================== */
+const cvs = document.getElementById('chart');
+const ctx = cvs.getContext('2d');
+let cw=0, ch=0, dpr=1;
+let mouse = {x:-1, y:-1, in:false};
+let indBtns = []; // 指标切换按钮区域，每帧 draw 填充
+
+function resize(){
+  dpr = window.devicePixelRatio || 1;
+  const r = cvs.getBoundingClientRect();
+  cw = r.width; ch = r.height;
+  cvs.width = cw*dpr; cvs.height = ch*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+window.addEventListener('resize', resize);
+cvs.addEventListener('mousemove', e=>{
+  const r = cvs.getBoundingClientRect();
+  mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.in = true;
+  draw();
+});
+cvs.addEventListener('mouseleave', ()=>{ mouse.in=false; draw(); });
+cvs.addEventListener('click', e=>{
+  const r = cvs.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  for(const b of indBtns){
+    if(x>=b.x && x<=b.x+b.w && y>=b.y && y<=b.y+b.h){
+      if(b.kind==='main') G.mainInd=b.key; else G.subInd=b.key;
+      draw();
+      return;
+    }
+  }
+});
+
+function draw(){
+  if(!G || !G.tickOHLC.length) return;   // 行情未就绪时不绘制
+  if(cw===0 || ch===0) return; // 画布尺寸未就绪（resize 前），跳过首帧
+  ctx.clearRect(0,0,cw,ch);
+  const bars = agg(G.tf, G.curTickIdx);
+  if(bars.length===0) return;
+
+  const trading = G.started;
+
+  // 布局：顶部主图 + 底部量图
+  const padL = 8, padR = 64, padT = 10, padB = 18;
+  const volH = 70;
+  const volGap = 8;
+  const mainH = ch - padT - padB - volH - volGap;
+  const mainY0 = padT, mainY1 = padT + mainH;
+  const volY0 = mainY1 + volGap, volY1 = volY0 + volH;
+
+  const plotW = cw - padL - padR;
+
+  // 价格范围
+  let hi=-Infinity, lo=Infinity, vMax=0;
+  for(const b of bars){ if(b.h>hi)hi=b.h; if(b.l<lo)lo=b.l; if(b.v>vMax)vMax=b.v; }
+  // 含主图指标范围
+  const maSeries = G.mainInd==='MA' ? CFG.maPeriods.map(p=> calcMA(bars,p)) : null;
+  const boll = G.mainInd==='BOLL' ? calcBOLL(bars) : null;
+  const extend = v => { if(v!==null){ if(v>hi)hi=v; if(v<lo)lo=v; } };
+  if(maSeries) maSeries.forEach(ms=> ms.forEach(extend));
+  if(boll) boll.forEach(arr=> arr.forEach(extend));
+  const pad = (hi-lo)*0.05;
+  hi += pad; lo -= pad;
+  if(hi===lo){ hi=lo*1.01; lo=lo*0.99; }
+
+  const n = bars.length;
+  const bw = plotW / n;       // 每根宽度
+  const barW = Math.max(1.5, bw*0.6);
+
+  const xAt = i => padL + i*bw + bw/2;
+  const yP = p => mainY1 - (p-lo)/(hi-lo)*mainH;
+  const yV = v => volY1 - (vMax>0? v/vMax*volH : 0);
+
+  // 网格
+  ctx.strokeStyle = '#1d2535'; ctx.fillStyle = '#5a6478'; ctx.font='10px Consolas';
+  ctx.lineWidth = 1;
+  const gridN = 5;
+  for(let i=0;i<=gridN;i++){
+    const p = lo + (hi-lo)*i/gridN;
+    const y = yP(p);
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(cw-padR,y); ctx.strokeStyle='#1a2130'; ctx.stroke();
+    ctx.fillStyle = '#6a7488'; ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillText(p.toFixed(2), cw-padR+4, y);
+  }
+  // 交易起点竖线（标记在交易开始所在周期根，即历史末根）
+  if(trading){
+    const tradeStartBar = Math.floor(G.tradeStartTick / CFG.tfs[G.tf]);
+    const ti = bars.findIndex(b=> b.idx === tradeStartBar);
+    if(ti>=0){
+      const x = xAt(ti);
+      ctx.strokeStyle = '#3a5a8c'; ctx.setLineDash([4,3]);
+      ctx.beginPath(); ctx.moveTo(x,mainY0); ctx.lineTo(x,volY1); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle='#6a8cb8'; ctx.textAlign='left'; ctx.fillText('交易起点', x+4, mainY0+8);
+    }
+  }
+
+  // 副图：VOL 或 MACD
+  ctx.strokeStyle='#283246'; ctx.strokeRect(padL,volY0,plotW,volH);
+  if(G.subInd==='VOL'){
+    for(let i=0;i<n;i++){
+      const b = bars[i];
+      const x = xAt(i);
+      const up = b.c>=b.o;
+      ctx.fillStyle = up? '#ff4d4f':'#2dbf6e'; // 与K线同色
+      ctx.fillRect(x-barW/2, yV(b.v), barW, volY1-yV(b.v));
+    }
+    ctx.fillStyle='#7a8499'; ctx.font='11px Consolas'; ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillText('VOL', padL+84, volY0+2);
+  } else {
+    const m = calcMACD(bars);
+    const vals = [...m.dif,...m.dea,...m.macd].filter(v=>v!==null);
+    if(vals.length){
+      const mmax = Math.max(Math.abs(Math.max(...vals)), Math.abs(Math.min(...vals)), 1e-9);
+      const zeroY = (volY0+volY1)/2;
+      const yM = v => zeroY - v/mmax*(volH/2-4);
+      for(let i=0;i<n;i++){
+        if(m.macd[i]===null) continue;
+        const x = xAt(i);
+        ctx.fillStyle = m.macd[i]>=0? '#ff4d4f':'#2dbf6e';
+        const y = yM(m.macd[i]);
+        if(m.macd[i]>=0) ctx.fillRect(x-barW/2, y, barW, zeroY-y);
+        else ctx.fillRect(x-barW/2, zeroY, barW, y-zeroY);
+      }
+      ctx.strokeStyle='#1a2130'; ctx.beginPath(); ctx.moveTo(padL,zeroY); ctx.lineTo(cw-padR,zeroY); ctx.stroke();
+      const drawLine=(arr,col)=>{ ctx.strokeStyle=col; ctx.lineWidth=1; ctx.beginPath(); let s=false; for(let i=0;i<n;i++){ if(arr[i]===null){s=false;continue;} const x=xAt(i),y=yM(arr[i]); if(!s){ctx.moveTo(x,y);s=true;}else ctx.lineTo(x,y);} ctx.stroke(); };
+      drawLine(m.dif,'#e6e6e6'); drawLine(m.dea,'#ffc832');
+    }
+    ctx.fillStyle='#7a8499'; ctx.font='11px Consolas'; ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillText('MACD', padL+84, volY0+2);
+    ctx.fillStyle='#e6e6e6'; ctx.fillText('DIF', padL+130, volY0+2);
+    ctx.fillStyle='#ffc832'; ctx.fillText('DEA', padL+165, volY0+2);
+  }
+
+  // K线（上涨空心红，下跌实心绿）
+  for(let i=0;i<n;i++){
+    const b = bars[i];
+    const x = xAt(i);
+    const up = b.c>=b.o;
+    const col = up? '#ff4d4f':'#2dbf6e';
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth=1;
+    // 影线
+    ctx.beginPath(); ctx.moveTo(x, yP(b.h)); ctx.lineTo(x, yP(b.l)); ctx.stroke();
+    // 实体
+    const yo = yP(b.o), yc = yP(b.c);
+    const top = Math.min(yo,yc), h = Math.max(1, Math.abs(yc-yo));
+    if(up){
+      ctx.fillStyle = '#0f151f'; ctx.fillRect(x-barW/2, top, barW, h); // 空心：填背景
+      ctx.strokeRect(x-barW/2, top, barW, h);                          // 红边
+    } else {
+      ctx.fillRect(x-barW/2, top, barW, h);                            // 实心绿
+    }
+  }
+
+  // 指标切换按钮（画在两幅图左上角）
+  indBtns = [];
+  const drawIndBtn=(bx,by,key,active,kind)=>{
+    const bw=36, bh=16;
+    indBtns.push({x:bx,y:by,w:bw,h:bh,key,kind});
+    ctx.fillStyle = active? '#2f6fed':'#1e2a40';
+    ctx.strokeStyle = active? '#4a82ff':'#2f3f5a'; ctx.lineWidth=1;
+    ctx.fillRect(bx,by,bw,bh); ctx.strokeRect(bx,by,bw,bh);
+    ctx.fillStyle = active?'#fff':'#c4d0e6';
+    ctx.font='10px Consolas'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(key, bx+bw/2, by+bh/2);
+  };
+  drawIndBtn(padL+4, mainY0+2, 'MA', G.mainInd==='MA', 'main');
+  drawIndBtn(padL+4+40, mainY0+2, 'BOLL', G.mainInd==='BOLL', 'main');
+  drawIndBtn(padL+4, volY0+2, 'VOL', G.subInd==='VOL', 'sub');
+  drawIndBtn(padL+4+40, volY0+2, 'MACD', G.subInd==='MACD', 'sub');
+
+  // 主图指标：MA 或 BOLL
+  const maCols = ['#f5a623','#4fc3f7','#e040fb'];
+  if(G.mainInd==='MA'){
+    CFG.maPeriods.forEach((p,pi)=>{
+      const ms = maSeries[pi];
+      ctx.strokeStyle = maCols[pi]; ctx.lineWidth=1.2;
+      ctx.beginPath();
+      let started=false;
+      for(let i=0;i<n;i++){
+        const v = ms[i];
+        if(v===null) { started=false; continue; }
+        const x = xAt(i), y = yP(v);
+        if(!started){ ctx.moveTo(x,y); started=true; }
+        else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    });
+    ctx.font='11px Consolas'; ctx.textAlign='left'; ctx.textBaseline='top';
+    CFG.maPeriods.forEach((p,pi)=>{
+      ctx.fillStyle = maCols[pi];
+      ctx.fillText('MA'+p, padL+84 + pi*54, mainY0+2);
+    });
+  } else {
+    const [bMid,bUp,bDn] = boll;
+    // 通道填充
+    ctx.fillStyle='rgba(110,130,180,0.12)'; ctx.beginPath();
+    let st=false;
+    for(let i=0;i<n;i++){ if(bUp[i]===null){st=false;continue;} const x=xAt(i),y=yP(bUp[i]); if(!st){ctx.moveTo(x,y);st=true;}else ctx.lineTo(x,y); }
+    for(let i=n-1;i>=0;i--){ if(bDn[i]===null) continue; const x=xAt(i),y=yP(bDn[i]); ctx.lineTo(x,y); }
+    ctx.closePath(); ctx.fill();
+    const drawLine=(arr,col)=>{ ctx.strokeStyle=col; ctx.lineWidth=1; ctx.beginPath(); let s=false; for(let i=0;i<n;i++){ if(arr[i]===null){s=false;continue;} const x=xAt(i),y=yP(arr[i]); if(!s){ctx.moveTo(x,y);s=true;}else ctx.lineTo(x,y);} ctx.stroke(); };
+    drawLine(bUp,'#6e82b4'); drawLine(bDn,'#6e82b4'); drawLine(bMid,'#f5c864');
+    ctx.fillStyle='#f5c864'; ctx.font='11px Consolas'; ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillText('BOLL', padL+84, mainY0+2);
+  }
+
+  // 十字光标
+  if(mouse.in && mouse.x>=padL && mouse.x<=padL+plotW){
+    const idx = Math.floor((mouse.x - padL)/bw);
+    if(idx>=0 && idx<n){
+      const b = bars[idx];
+      const x = xAt(idx);
+      ctx.strokeStyle='#4a5a78'; ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(x,mainY0); ctx.lineTo(x,volY1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(padL,mouse.y); ctx.lineTo(cw-padR,mouse.y); ctx.stroke();
+      ctx.setLineDash([]);
+      // 悬停弹窗：显示该K线的 开盘/最高/最低/收盘 四个信息（与真实行情软件一致）
+      const rows = [['开盘', b.o], ['最高', b.h], ['最低', b.l], ['收盘', b.c]];
+      const rowH = 18, pw = 110, ph = rows.length * rowH + 8;
+      let bx = x + 12; if(bx + pw > cw - padR) bx = x - 12 - pw;
+      let by = Math.min(Math.max(mouse.y - ph/2, mainY0 + 2), volY1 - ph - 2);
+      ctx.fillStyle='rgba(20,28,44,0.95)'; ctx.strokeStyle='#3a4a66';
+      ctx.fillRect(bx,by,pw,ph); ctx.strokeRect(bx,by,pw,ph);
+      ctx.font='11px Microsoft YaHei'; ctx.textBaseline='top';
+      const valCol = b.c>=b.o? '#ff4d4f':'#2dbf6e';  // 数值颜色随该K线涨跌
+      rows.forEach((r,i)=>{
+        const yy = by + 6 + i * rowH;
+        ctx.fillStyle='#8a94a8'; ctx.textAlign='left';
+        ctx.fillText(r[0], bx+8, yy);
+        ctx.fillStyle=valCol; ctx.textAlign='right';
+        ctx.fillText(r[1].toFixed(2), bx+pw-8, yy);
+      });
+    }
+  }
+
+  // 未结算时的最新价线
+  if(!G.over){
+    const p = curPrice();
+    const y = yP(p);
+    ctx.strokeStyle='#888'; ctx.setLineDash([2,2]);
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(cw-padR,y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#1a2233'; ctx.fillRect(cw-padR, y-8, padR, 16);
+    ctx.fillStyle='#e6e9f0'; ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillText(p.toFixed(2), cw-padR+4, y);
+  }
+
+  // 标题信息
+  ctx.fillStyle='#7a8499'; ctx.font='11px Microsoft YaHei'; ctx.textAlign='right'; ctx.textBaseline='top';
+  ctx.fillText('周期: '+tfName(G.tf)+'  杠杆: '+G.lev+'x' + (G.real ? '  · 真实A股' : ''), cw-padR-2, padT+2);
+}
+
+function tfName(tf){ return {M:'月',W:'周',D:'日','240':'4h','60':'1h','30':'30m','15':'15m'}[tf]; }
+
+function calcMA(bars, period){
+  const out = new Array(bars.length).fill(null);
+  let sum=0;
+  for(let i=0;i<bars.length;i++){
+    sum += bars[i].c;
+    if(i>=period) sum -= bars[i-period].c;
+    if(i>=period-1) out[i] = sum/period;
+  }
+  return out;
+}
+function calcEMA(vals, period){
+  const out = new Array(vals.length).fill(null);
+  if(vals.length===0) return out;
+  const k = 2/(period+1);
+  let e = vals[0];
+  for(let i=0;i<vals.length;i++){
+    e = i===0? vals[0] : vals[i]*k + e*(1-k);
+    out[i] = e;
+  }
+  return out;
+}
+function calcMACD(bars){
+  const closes = bars.map(b=>b.c);
+  const ema12 = calcEMA(closes, 12);
+  const ema26 = calcEMA(closes, 26);
+  const dif = closes.map((_,i)=> (ema12[i]!==null && ema26[i]!==null)? ema12[i]-ema26[i] : null);
+  // DEA = EMA(dif,9)，跳过 null
+  const dea = new Array(bars.length).fill(null);
+  const k = 2/(9+1); let e=null;
+  for(let i=0;i<dif.length;i++){
+    if(dif[i]===null) continue;
+    e = e===null? dif[i] : dif[i]*k + e*(1-k);
+    dea[i] = e;
+  }
+  const macd = dif.map((v,i)=> (v!==null && dea[i]!==null)? 2*(v-dea[i]) : null);
+  return {dif, dea, macd};
+}
+function calcBOLL(bars, period=20, kk=2){
+  const mid = new Array(bars.length).fill(null);
+  const up = new Array(bars.length).fill(null);
+  const dn = new Array(bars.length).fill(null);
+  for(let i=0;i<bars.length;i++){
+    if(i>=period-1){
+      const seg = [];
+      for(let j=i-period+1;j<=i;j++) seg.push(bars[j].c);
+      const m = seg.reduce((a,b)=>a+b,0)/period;
+      const variance = seg.reduce((a,b)=>a+(b-m)*(b-m),0)/period;
+      const sd = Math.sqrt(variance);
+      mid[i]=m; up[i]=m+kk*sd; dn[i]=m-kk*sd;
+    }
+  }
+  return [mid, up, dn];
+}
+
+/* ===================== 事件 ===================== */
+document.querySelectorAll('.btn.tf').forEach(b=> b.addEventListener('click', ()=>{
+  if(b.dataset.tf===undefined) return; // 排除指标按钮
+  document.querySelectorAll('.btn.tf').forEach(x=>{ if(x.dataset.tf!==undefined) x.classList.remove('active'); });
+  b.classList.add('active'); G.tf = b.dataset.tf; draw();
+}));
+document.querySelectorAll('.btn.lev').forEach(b=> b.addEventListener('click', ()=>{
+  document.querySelectorAll('.btn.lev').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); G.lev = parseInt(b.dataset.lev); updateUI(); draw();
+}));
+document.getElementById('nextBtn').addEventListener('click', stepNext);
+document.getElementById('startBtn').addEventListener('click', startTrade);
+document.getElementById('longBtn').addEventListener('click', doLong);
+document.getElementById('shortBtn').addEventListener('click', doShort);
+document.getElementById('flatBtn').addEventListener('click', ()=>{ if(G.pos!==0){ flatPosition(curPrice()); checkLiquidation(); updateUI(); draw(); } });
+// 买入仓位选择：1/4、1/3、1/2、全仓（按剩余资金比例开仓）
+document.querySelectorAll('.btn.pos').forEach(b=> b.addEventListener('click', ()=>{
+  document.querySelectorAll('.btn.pos').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  G.posFrac = parseFloat(b.dataset.frac);
+}));
+document.getElementById('againBtn').addEventListener('click', ()=>{
+  document.getElementById('mask').classList.remove('show');
+  newGame(false);   // 重新随机一只A股
+});
+// 行情加载失败后的手动重试
+document.getElementById('retryBtn').addEventListener('click', ()=>{
+  newGame(false);
+});
+
+/* 键盘快捷键：结算画面按 R 重新开始 / 开始界面按任意键开始交易 */
+document.addEventListener('keydown', (e)=>{
+  if(!G) return;
+  // 结算画面（G.over）：按 R 键重新开始，行情就绪后直接进入交易
+  if(G.over){
+    if(e.key === 'r' || e.key === 'R' || e.code === 'KeyR'){
+      document.getElementById('mask').classList.remove('show'); // 关闭结算弹窗
+      newGame(true);  // 重置并加载新一局行情，就绪后自动开始交易
+    }
+    return;
+  }
+  // 开始界面（未开始交易）：按任意键开始交易（加载中除外）
+  if(!G.started){
+    if(G.loading) return;
+    startTrade();
+  }
+});
+
+/* ===================== 启动 ===================== */
+newGame();
+resize();
+</script>
+</body>
+</html>
