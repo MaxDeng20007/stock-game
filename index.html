@@ -523,7 +523,7 @@ async function newGame(autoStart){
     };
     G.real.marketType = classifyMarket(G.real.tradeDays);
     G.tickOHLC = realBarsToTicks(daily);
-    G.curTickIdx = G.tickOHLC.length - 1;
+    G.curTickIdx = CFG.histDayBars * CFG.dayTicks - 1;   // 定位到历史区末尾（第100天收盘），交易区60天待逐步推进
     G.loading = false;
     document.getElementById('dataStatus').textContent =
       '真实A股行情已就绪（' + G.real.daily.length + '个交易日 · 股票结算时揭晓），准备好即可开战';
