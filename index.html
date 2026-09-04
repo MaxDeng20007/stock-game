@@ -55,6 +55,15 @@
   button.btn.pos { background: #241d33; border-color: #4a3a63; color: #cbb8e8; padding: 8px 14px; font-size: 14px; }
   button.btn.pos:hover { background: #332a48; }
   button.btn.pos.active { background: #8e44ad; border-color: #b06ad0; color: #fff; font-weight: 600; }
+  /* 右上角圆形头像：个人中心入口（游客蓝色 / 已登录紫色） */
+  button.avatar {
+    width: 34px; height: 34px; border-radius: 50%; padding: 0;
+    background: #2f6fed; border: 2px solid #4a82ff; color: #fff;
+    font-size: 14px; font-weight: 700; cursor: pointer; transition: .15s; line-height: 1;
+  }
+  button.avatar:hover { background: #4a82ff; }
+  button.avatar.logged { background: #8e44ad; border-color: #b06ad0; }
+  button.avatar.logged:hover { background: #a055bd; }
   /* 顶部放大的价格与涨跌率 */
   .price-big { font-size: 26px; font-weight: 700; color: #e6e9f0; line-height: 1; font-variant-numeric: tabular-nums; }
   .chg-big { font-size: 20px; font-weight: 700; line-height: 1; margin-left: 10px; font-variant-numeric: tabular-nums; }
@@ -131,6 +140,10 @@
       <button class="btn pos" data-frac="0.333333">1/3</button>
       <button class="btn pos" data-frac="0.5">1/2</button>
       <button class="btn pos active" data-frac="1">全仓</button>
+    </div>
+    <!-- 右上角头像：个人中心入口（游客显示"客"，登录显示手机号后4位/首字符） -->
+    <div class="group" style="margin-left:auto;">
+      <button class="avatar" id="avatarBtn" title="个人中心（游客）">客</button>
     </div>
   </div>
 
@@ -316,7 +329,7 @@ let G = null; // 全局游戏状态
 
 /* ===================== 真实行情（东方财富免费API · JSONP跨域） ===================== */
 const EM_LIST_TTL = 7*24*3600*1000;   // 股票列表缓存7天
-const EM_LIST_KEY = 'em_stocklist_v1';
+const EM_LIST_KEY = 'em_stocklist_v2';   // v2：含 f2 最新价，供资金预过滤
 
 /* ===================== 个人中心 / 历史记录（localStorage） ===================== */
 const SG_HIST_KEY = 'sg_history_v1';        // {recent:[最多20条], archived:[最多100条]}
@@ -470,7 +483,8 @@ async function fetchStockList(){
     if(c && c.list && c.list.length > 100 && Date.now() - c.t < EM_LIST_TTL) return c.list;
   }catch(e){}
   const fs = 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23';
-  const q = '/api/qt/clist/get?po=0&np=1&fltt=2&invt=2&fid=f12&fs=' + fs + '&fields=f12,f13,f14';
+  // f2=最新价（用于按资金预过滤“买得起1手”的股票）
+  const q = '/api/qt/clist/get?po=0&np=1&fltt=2&invt=2&fid=f12&fs=' + fs + '&fields=f2,f12,f13,f14';
   // 先取第一页拿到总数，再受限并发（6路）拉取其余页（服务端每页上限100条）
   const first = await jsonpRace(q + '&pn=1&pz=100');
   const total = first && first.data ? first.data.total : 0;
@@ -487,7 +501,9 @@ async function fetchStockList(){
       if(!code || !name) continue;
       if(/ST|退/.test(name)) continue;   // 剔除 ST / 退市整理
       if(/^[NC]/.test(name)) continue;   // 剔除上市初期新股（N首日 / C前5日）
-      list.push({code: String(code), mkt: mkt, name: String(name).replace(/\s+/g,'')});
+      // f2 最新价（停牌股为 '-'，置 null 表示未知、不参与预过滤拦截）
+      const price = (typeof it.f2 === 'number' && it.f2 > 0) ? it.f2 : null;
+      list.push({code: String(code), mkt: mkt, name: String(name).replace(/\s+/g,''), price: price});
     }
   };
   push(arr1);
@@ -541,28 +557,112 @@ async function fetchDailyKline(secid, code, mkt){
   ]);
 }
 
-/* 随机挑一只股票 + 随机截取行情窗口（前100根做历史 + 后60根做交易区间）
-   按用户设置的初始资金过滤：1手(100股)×单价 ≤ 资金 才可入选 */
-async function loadRealMarket(){
-  const settings = loadSettings();
-  const cap = settings.initCash || CFG.initCash;
-  const list = await fetchStockList();
-  for(let i=0; i<20; i++){
-    const pick = list[Math.floor(Math.random() * list.length)];
-    try{
-      const bars = await fetchDailyKline(pick.mkt + '.' + pick.code, pick.code, pick.mkt);
-      if(bars && bars.length >= 170){
-        const startIdx = 100 + Math.floor(Math.random() * (bars.length - 160));
-        // 可买性检查：交易区第一根开盘价 × 100 ≤ 初始资金
-        const entryPrice = bars[startIdx].o;
-        if(entryPrice * 100 <= cap){
-          return {pick: pick, bars: bars, startIdx: startIdx};
-        }
-        // 股价太高买不起1手，换一只重试
-      }
-    }catch(e){ /* 换一只重试 */ }
+/* ===== 后台筛选系统：按资金在后台预选“买得起1手”的股票，用户点开始即玩 =====
+   - 页面加载/资金变更/每局开始时，后台自动筛选并预取K线
+   - 筛选条件：1手(100股)×单价 ≤ 初始资金（先用列表最新价 f2 粗滤，再用K线窗口开盘价验证）
+   - 用户点“开始交易”时直接取用已就绪的结果，无需等待加载 */
+let pickGen = 0;          // 筛选代次：资金变更/重开时递增，作废旧结果
+let readyMarket = null;   // 已就绪的行情 {cap, pick, bars, startIdx}
+let readyPromise = null;  // 进行中的筛选 Promise
+let readyCap = 0;         // 进行中筛选对应的资金
+
+function shuffleArr(a){
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    const t = a[i]; a[i] = a[j]; a[j] = t;
   }
-  throw new Error('多次尝试均未获取到可买得起的行情');
+  return a;
+}
+
+/* 后台筛选一只符合资金条件的A股并预取完整K线 */
+async function backgroundPick(cap, gen){
+  const list = await fetchStockList();
+  if(gen !== pickGen) return null;
+  // 第一步（粗滤）：列表最新价 ×100 ≤ 资金 才进入候选；无价格字段的旧缓存不拦截
+  let cands = list.filter(s => (!s.price || s.price <= 0) ? true : s.price * 100 <= cap);
+  if(cands.length < 20) cands = list.slice();   // 极端资金下候选过少，则全量交给K线验证
+  shuffleArr(cands);
+  // 第二步（验证）：4路并发拉K线，每只股票试3个随机窗口，取窗口开盘价买得起的
+  let tried = 0;
+  for(let i=0; i<cands.length && tried < 30 && gen === pickGen; ){
+    const batch = [];
+    for(let k=0; k<4 && i<cands.length && tried < 30; k++, i++){ batch.push(cands[i]); tried++; }
+    const rs = await pooled(4, batch.map(p => async ()=>{
+      try{ return {p: p, bars: await fetchDailyKline(p.mkt + '.' + p.code, p.code, p.mkt)}; }
+      catch(e){ return {p: p, bars: null}; }
+    }));
+    for(const r of rs){
+      if(gen !== pickGen) return null;
+      const bars = r && r.bars;
+      if(!bars || bars.length < 170) continue;
+      for(let w=0; w<3; w++){
+        const startIdx = 100 + Math.floor(Math.random() * (bars.length - 160));
+        if(bars[startIdx].o * 100 <= cap){
+          return {cap: cap, pick: r.p, bars: bars, startIdx: startIdx};
+        }
+      }
+    }
+  }
+  throw new Error('未筛选到符合资金条件的股票');
+}
+
+/* 开始界面状态文案 + 按钮。
+   按钮可用性只取决于“当前这局”是否就绪（!G.loading）；
+   后台预筛下一局进行中不应阻塞当前局开始。 */
+function updateStartStatus(err){
+  const cap = loadSettings().initCash || CFG.initCash;
+  const st = document.getElementById('dataStatus');
+  const btn = document.getElementById('startBtn');
+  const currentReady = G && !G.loading;   // 当前局行情是否已就绪可开玩
+  if(readyMarket && readyMarket.cap === cap){
+    st.textContent = '已在后台为你筛选好符合资金条件的A股（1手100股×股价 ≤ ' + fmt(cap) + '），股票身份已隐藏，点击开始直接开战';
+    btn.disabled = false;
+    btn.textContent = '开始交易';
+  }else if(currentReady){
+    // 本局已就绪可玩，后台同时在预筛下一局
+    st.textContent = '行情已就绪，点击“开始交易”直接开战（后台正在预选下一局）';
+    btn.disabled = false;
+    btn.textContent = '开始交易';
+  }else if(err){
+    st.textContent = '真实行情暂时筛选失败（' + err.message + '），点击开始将使用模拟行情，后台仍会继续筛选';
+    btn.disabled = false;
+    btn.textContent = '开始交易';
+  }else{
+    st.textContent = '正在后台按你的资金筛选“买得起1手”的A股…';
+    btn.disabled = true;
+    btn.textContent = '筛选中…';
+  }
+}
+
+/* 触发一轮后台筛选（页面加载 / 资金变更 / 每局用掉预选结果后调用） */
+function kickBackgroundPick(){
+  const cap = loadSettings().initCash || CFG.initCash;
+  pickGen++;
+  readyMarket = null;
+  readyCap = cap;
+  updateStartStatus();
+  const gen = pickGen;
+  readyPromise = backgroundPick(cap, gen).then(r=>{
+    if(gen === pickGen && r) readyMarket = r;
+    readyPromise = null;
+    updateStartStatus();
+    return (gen === pickGen && r) ? r : null;
+  }).catch(err=>{
+    if(gen === pickGen){ readyPromise = null; updateStartStatus(err); }
+    return null;
+  });
+  return readyPromise;
+}
+
+/* 确保拿到一只符合当前资金的行情：已就绪立即返回，否则等待后台筛选 */
+async function ensureMarket(cap){
+  if(readyMarket && readyMarket.cap === cap) return readyMarket;
+  if(readyPromise && readyCap === cap){
+    await readyPromise;
+    if(readyMarket && readyMarket.cap === cap) return readyMarket;
+    return null;
+  }
+  return await kickBackgroundPick();
 }
 
 /* 行情分类：股灾 / 妖股 / 冲高回落 / 趋势上涨 / 趋势下跌 / 横盘（按交易日序列） */
@@ -670,12 +770,10 @@ async function newGame(autoStart){
     lastSnap: null,       // 上一局的快照（供结算画面复盘/存档按钮使用）
     review: null,         // 复盘快照（非null时进入复盘视图）
   };
-  // 弹窗与按钮初始状态（行情就绪前禁止开始）
+  // 弹窗与按钮初始状态（后台筛选就绪前禁止开始）
   document.getElementById('startMask').classList.add('show');
   document.getElementById('mask').classList.remove('show');
   hideTip();
-  document.getElementById('dataStatus').textContent = '正在随机挑选A股并加载真实行情…';
-  document.getElementById('startBtn').disabled = true;
   document.getElementById('retryBtn').style.display = 'none';
   document.getElementById('nextBtn').disabled = true;
   document.getElementById('longBtn').disabled = true;
@@ -683,10 +781,11 @@ async function newGame(autoStart){
   // 重置存档按钮状态
   document.getElementById('archiveBtn').textContent = '存档';
   document.getElementById('archiveBtn').disabled = false;
+  updateStartStatus();   // 文案：筛选中… / 已就绪
   draw();
-  // 拉取真实A股行情；失败则回退为模拟行情
-  try{
-    const r = await loadRealMarket();
+  // 直接取用后台已预选好的股票；尚未就绪则等待后台筛选（点开始无需等待加载）
+  const r = await ensureMarket(cap);
+  if(r){
     const daily = r.bars.slice(r.startIdx - 100, r.startIdx + 60);  // 160根：100历史 + 60交易
     G.real = {
       code: r.pick.code, name: r.pick.name,
@@ -697,20 +796,22 @@ async function newGame(autoStart){
     G.tickOHLC = realBarsToTicks(daily);
     G.curTickIdx = CFG.histDayBars * CFG.dayTicks - 1;   // 定位到历史区末尾（第100天收盘），交易区60天待逐步推进
     G.loading = false;
-    document.getElementById('dataStatus').textContent =
-      '真实A股行情已就绪（' + G.real.daily.length + '个交易日 · 股票结算时揭晓），准备好即可开战';
-    document.getElementById('startBtn').disabled = false;
+    updateStartStatus();
     updateUI(); draw();
+    kickBackgroundPick();    // 本局用掉预选结果，后台立刻预选下一局（再来一局即点即玩）
     if(autoStart) startTrade();
-  }catch(err){
+  }else{
+    // 后台筛选失败：本局回退模拟行情，后台继续为下一局筛选真实行情
     G.loading = false;
-    document.getElementById('dataStatus').textContent = '行情加载失败（' + err.message + '），本局改用模拟行情';
+    document.getElementById('dataStatus').textContent = '真实行情暂时筛选失败，本局改用模拟行情（后台仍在继续筛选）';
     document.getElementById('startBtn').disabled = false;
+    document.getElementById('startBtn').textContent = '开始交易';
     document.getElementById('retryBtn').style.display = '';
     lastPrice = CFG.startPrice;
     genTicks(CFG.histDayBars * CFG.dayTicks);
     G.curTickIdx = G.tickOHLC.length - 1;
     updateUI(); draw();
+    kickBackgroundPick();
     if(autoStart) startTrade();
   }
 }
@@ -1129,6 +1230,21 @@ function drawReviewChart(){
 }
 
 /* ===================== 个人中心 ===================== */
+/* 右上角头像：游客显示"客"（蓝色）；登录用户显示手机号后4位/账号首字符（紫色） */
+function refreshAvatar(){
+  const s = loadSettings();
+  const btn = document.getElementById('avatarBtn');
+  if(s.mode === 'login' && s.user){
+    const u = String(s.user);
+    btn.textContent = /^1\d{10}$/.test(u) ? u.slice(-4) : (u[0] || '我').toUpperCase();
+    btn.classList.add('logged');
+    btn.title = '个人中心（' + u + '）';
+  }else{
+    btn.textContent = '客';
+    btn.classList.remove('logged');
+    btn.title = '个人中心（游客）';
+  }
+}
 function openCenter(){
   const s = loadSettings();
   document.getElementById('centerMask').classList.add('show');
@@ -1140,6 +1256,7 @@ function openCenter(){
 }
 function closeCenter(){
   document.getElementById('centerMask').classList.remove('show');
+  refreshAvatar();   // 登录态可能在个人中心内发生变化，同步头像
 }
 function showCenterLogin(){
   document.getElementById('centerLogin').style.display = '';
@@ -1168,6 +1285,7 @@ function guestEnter(){
   const s = loadSettings();
   s.mode = 'guest'; s.user = ''; s.code = '';
   saveSettings(s);
+  refreshAvatar();
   showCenterMain();
 }
 function sendCode(){
@@ -1191,6 +1309,7 @@ function doLogin(){
   if(!s.code || code !== s.code){ showTip('验证码不正确，请重新获取'); return; }
   s.mode = 'login'; s.user = user; s.code = '';
   saveSettings(s);
+  refreshAvatar();
   showCenterMain();
 }
 function logout(){
@@ -1200,6 +1319,7 @@ function logout(){
   document.getElementById('loginUser').value = '';
   document.getElementById('loginCode').value = '';
   document.getElementById('codeDisplay').textContent = '';
+  refreshAvatar();
   showCenterLogin();
 }
 function renderHistory(){
@@ -1259,7 +1379,14 @@ function setCapital(v){
   // 更新按钮选中态
   document.querySelectorAll('#centerMain .btn.pos[data-cap]').forEach(b =>
     b.classList.toggle('active', parseFloat(b.dataset.cap) === cap));
-  showTip('初始资金已设为 ' + fmt(cap) + '，下一局生效');
+  // 资金变更：后台立即按新资金重新筛选股票（下一局直接使用）
+  kickBackgroundPick();
+  // 若本局还没开始，直接按新资金重新准备本局（立即生效）
+  if(G && !G.started && !G.over){
+    closeCenter();
+    newGame(false);
+  }
+  showTip('初始资金已设为 ' + fmt(cap) + '，后台正在重新筛选买得起的股票，下一局生效');
 }
 
 /* ===================== UI ===================== */
@@ -1670,8 +1797,9 @@ document.getElementById('archiveBtn').addEventListener('click', ()=>{
 });
 // 复盘返回按钮
 document.getElementById('rvBack').addEventListener('click', exitReview);
-// 个人中心
+// 个人中心（开始界面按钮 + 右上角头像，两个入口）
 document.getElementById('centerBtn').addEventListener('click', openCenter);
+document.getElementById('avatarBtn').addEventListener('click', ()=>{ hideTip(); openCenter(); });
 document.getElementById('centerBack').addEventListener('click', closeCenter);
 document.getElementById('modeGuest').addEventListener('click', ()=>setLoginTab('guest'));
 document.getElementById('modeLogin').addEventListener('click', ()=>setLoginTab('login'));
@@ -1721,6 +1849,7 @@ document.addEventListener('keydown', (e)=>{
 });
 
 /* ===================== 启动 ===================== */
+refreshAvatar();   // 头像按登录态初始化
 newGame();
 resize();
 </script>
