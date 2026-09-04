@@ -43,13 +43,12 @@
   button.btn.lev { background: #2a2018; border-color: #4a3320; color: #e0b890; }
   button.btn.lev:hover { background: #3a2c20; }
   button.btn.lev.active { background: #f5a623; border-color: #ffb84a; color: #1a1208; font-weight: 600; }
-  /* 做多按钮：红色（买入开仓） */
+  /* 买入按钮：红色 */
   button.btn.long { background: #8c2626; border-color: #c04a4a; color: #ffd9d9; }
   button.btn.long:hover { background: #a53030; }
-  /* 做空按钮：绿色（卖出开仓） */
+  /* 卖出按钮：绿色 */
   button.btn.short { background: #1c5e3a; border-color: #2a8c52; color: #b6f0c8; }
   button.btn.short:hover { background: #257a4a; }
-  button.btn.flat { background: #4a4a52; border-color: #6a6a72; }
   /* 下一根按钮：蓝色加大加粗，突出辨识度 */
   button.btn.next { background: #2f6fed; border-color: #4a82ff; color: #fff; font-weight: 700; padding: 12px; font-size: 15px; letter-spacing: 2px; }
   /* 仓位选择按钮：紫色系（顶栏，紧随杠杆） */
@@ -150,7 +149,7 @@
           <h2>模拟股票交易</h2>
           <div class="sub" id="dataStatus">正在随机挑选A股并加载真实行情…</div>
           <div class="sub">规则：随机一只A股的真实历史行情，走满 60 根日K结算，保证金率 ≤ 50% 爆仓</div>
-          <div class="sub">操作：选仓位 → 做多/做空 → 自动推进下一根；可同方向加仓</div>
+          <div class="sub">操作：选仓位 → 买入建仓 / 卖出减仓 → 自动推进下一根；可分批买入加仓</div>
           <div class="sub hint">股票身份已隐藏，结算时揭晓 · 数据来源：东方财富</div>
           <div style="display:flex;justify-content:center;gap:10px;margin-top:6px;">
             <button class="btn next" id="startBtn" disabled>开始交易</button>
@@ -169,6 +168,14 @@
           <div class="sub" id="dlgSub"></div>
           <div class="sub" id="dlgSub2"></div>
           <button class="btn next" id="againBtn">再来一局</button>
+        </div>
+      </div>
+      <!-- 通用小提示弹窗（单按钮确定） -->
+      <div class="mask" id="tipMask">
+        <div class="dialog" style="min-width:300px;">
+          <h2 id="tipTitle" style="font-size:17px;">提示</h2>
+          <div class="sub" id="tipMsg" style="font-size:14px;line-height:1.6;padding:4px 6px;"></div>
+          <button class="btn next" id="tipOk">确定</button>
         </div>
       </div>
     </div>
@@ -190,9 +197,8 @@
       <div class="panel">
         <h3>操作</h3>
         <div class="ops">
-          <button class="btn long" id="longBtn" disabled>做多（买入）</button>
-          <button class="btn short" id="shortBtn" disabled>做空（卖出）</button>
-          <button class="btn flat" id="flatBtn" disabled>平仓</button>
+          <button class="btn long" id="longBtn" disabled>买入</button>
+          <button class="btn short" id="shortBtn" disabled>卖出</button>
           <button class="btn next" id="nextBtn" disabled>下一根 →</button>
         </div>
       </div>
@@ -202,7 +208,8 @@
         <div class="hint">
           · 每局随机挑选一只A股的真实历史行情（前复权日K，数据来自东方财富），股票身份结算时揭晓。<br>
           · 历史100根日K仅供参考，点「开始交易」后下单生效。<br>
-          · 支持做多/做空：按顶栏所选仓位（杠杆旁）比例开仓，可同方向加仓（开仓价加权平均）。<br>
+          · 只能先买入建仓，再卖出手里的持仓（不允许做空/卖空）。<br>
+          · 仓位选择对买入=按剩余资金比例买入、对卖出=按当前持仓比例卖出（全仓=全部卖出）；可分批买入加仓（开仓价加权平均）。<br>
           · 「下一根」按当前周期推进，走满60根日K结算；手续费0.1%（买卖各收）、滑点0.1%。<br>
           · 杠杆越高风险越大；保证金率≤50%即爆仓终结本局。<br>
           · 上涨空心红K，下跌实心绿K；主图可切 MA/BOLL，副图可切 VOL/MACD。
@@ -504,13 +511,14 @@ async function newGame(autoStart){
   };
   // 弹窗与按钮初始状态（行情就绪前禁止开始）
   document.getElementById('startMask').classList.add('show');
+  document.getElementById('mask').classList.remove('show');
+  hideTip();
   document.getElementById('dataStatus').textContent = '正在随机挑选A股并加载真实行情…';
   document.getElementById('startBtn').disabled = true;
   document.getElementById('retryBtn').style.display = 'none';
   document.getElementById('nextBtn').disabled = true;
   document.getElementById('longBtn').disabled = true;
   document.getElementById('shortBtn').disabled = true;
-  document.getElementById('flatBtn').disabled = true;
   draw();
   // 拉取真实A股行情；失败则回退为模拟行情
   try{
@@ -619,6 +627,7 @@ function startTrade(){
   document.getElementById('startMask').classList.remove('show'); // 关闭开局弹窗
   document.getElementById('nextBtn').disabled = false;
   document.getElementById('longBtn').disabled = false;
+  document.getElementById('shortBtn').disabled = false;
   updateUI(); draw();
 }
 
@@ -636,34 +645,43 @@ function marginRatio(price){
   return totalAsset(price) / G.marginUsed;
 }
 
-function doLong(){
-  // 做多买入：按左下角所选仓位比例开多（可同方向加仓）；持空仓时需先平仓
+/* 通用小提示弹窗 */
+function showTip(msg){
+  document.getElementById('tipMsg').textContent = msg;
+  document.getElementById('tipMask').classList.add('show');
+}
+function hideTip(){
+  document.getElementById('tipMask').classList.remove('show');
+}
+
+function doBuy(){
+  // 买入：按顶栏所选仓位比例，以剩余资金作为保证金买入（可分批加仓，开仓价加权平均）
   if(!G.started || G.over) return;
-  if(G.pos < 0) return; // 持空仓，禁止做多
   const price = curPrice();
   const execPrice = price * (1 + CFG.slipRate); // 买入+滑点
-  if(!openPosition(1, execPrice)) return;       // 现金不足，不动作
+  if(!openPosition(execPrice)) return;          // 现金不足，不动作
   checkLiquidation();
   updateUI(); draw();
-  // 买入后自动推进下一根
-  if(!G.over) stepNext();
+  if(!G.over) stepNext();                       // 买入后自动推进下一根
 }
 
-function doShort(){
-  // 做空卖出：按左下角所选仓位比例开空（可同方向加仓）；持多仓时需先平仓
+function doSell(){
+  // 卖出：只能卖出手里已有的持仓，按顶栏所选仓位比例卖出对应股数（全仓=全部卖光）
   if(!G.started || G.over) return;
-  if(G.pos > 0) return; // 持多仓，禁止做空
+  if(G.pos <= 0){ showTip('当前没有持仓，无法卖出。请先买入建仓。'); return; }
+  const frac = G.posFrac >= 1 ? 1 : G.posFrac;
+  const qty = G.pos * frac;
+  if(qty <= 0){ showTip('持仓不足，无法卖出该数量。'); return; }
   const price = curPrice();
   const execPrice = price * (1 - CFG.slipRate); // 卖出-滑点
-  if(!openPosition(-1, execPrice)) return;      // 现金不足，不动作
+  sellPosition(qty, execPrice);
   checkLiquidation();
   updateUI(); draw();
-  // 开仓后自动推进下一根
-  if(!G.over) stepNext();
+  if(!G.over) stepNext();                       // 卖出后自动推进下一根
 }
 
-function openPosition(dir, price){
-  // 按所选仓位比例开仓：保证金 = 剩余现金 × 仓位比例（预留手续费），成功返回 true
+function openPosition(price){
+  // 买入开仓/加仓：保证金 = 剩余现金 × 仓位比例（预留手续费），成功返回 true
   const usable = G.cash * G.posFrac;
   if(usable <= 1) return false;
   // 保证金 m = usable/(1+lev*feeRate)，使 m+fee 恰好用完 usable
@@ -672,26 +690,29 @@ function openPosition(dir, price){
   if(qty <= 0) return false;
   const fee = qty * price * CFG.feeRate;
   // 同方向加仓：开仓价按数量加权平均
-  const oldAbs = Math.abs(G.pos);
-  G.entry = (G.entry * oldAbs + price * qty) / (oldAbs + qty);
-  G.pos += qty * dir;           // pos正多负空
+  const oldQty = G.pos;
+  G.entry = (G.entry * oldQty + price * qty) / (oldQty + qty);
+  G.pos += qty;
   G.cash -= (m + fee);          // 扣保证金+手续费
   G.marginUsed += m;
   G.tradeCount++;
   return true;
 }
 
-function flatPosition(price){
-  if(G.pos===0) return;
-  // 平仓：返还保证金 + 浮盈 - 手续费
-  const fee = Math.abs(G.pos) * price * CFG.feeRate;
-  const pnl = floatPnl(price);
+function sellPosition(qty, price){
+  // 卖出 qty 股：按比例释放保证金、实现对应盈亏、扣手续费；全卖光则持仓清零
+  if(G.pos <= 0 || qty <= 0) return;
+  if(qty >= G.pos) qty = G.pos;              // 全仓卖出：精确清仓
+  const fracSold = qty / G.pos;
+  const fee = qty * price * CFG.feeRate;
+  const pnl = (price - G.entry) * qty;       // 多头：卖出价-开仓价
+  const mRelease = G.marginUsed * fracSold;  // 按比例释放保证金
+  G.cash += mRelease + pnl - fee;
+  G.marginUsed -= mRelease;
   G.realized += pnl - fee;
-  G.cash += G.marginUsed + pnl - fee;
-  G.marginUsed = 0;
-  G.pos = 0;
-  G.entry = 0;
+  G.pos -= qty;
   G.tradeCount++;
+  if(G.pos < 1e-9){ G.pos = 0; G.entry = 0; G.marginUsed = 0; }
 }
 
 function checkLiquidation(){
@@ -716,7 +737,7 @@ function settle(reason){
   document.getElementById('nextBtn').disabled = true;
   document.getElementById('longBtn').disabled = true;
   document.getElementById('shortBtn').disabled = true;
-  document.getElementById('flatBtn').disabled = true;
+  hideTip();
   // 强平未平仓位
   if(G.pos!==0){
     const p = curPrice();
@@ -797,7 +818,7 @@ function updateUI(){
   const total = totalAsset(p);
   document.getElementById('total').textContent = fmt(total);
   document.getElementById('cash').textContent = fmt(G.cash);
-  document.getElementById('pos').textContent = G.pos===0?'空仓':(G.pos>0?('多 '+fmtQty(G.pos)):('空 '+fmtQty(Math.abs(G.pos))));
+  document.getElementById('pos').textContent = G.pos===0?'空仓（未买入）':('持有 '+fmtQty(G.pos));
   document.getElementById('entry').textContent = G.pos===0?'--':G.entry.toFixed(2);
   const pnlEl = document.getElementById('pnl');
   pnlEl.textContent = (fp>=0?'+':'') + fmt(fp);
@@ -810,11 +831,10 @@ function updateUI(){
   retEl.style.color = ret>=0? '#ff4d4f':'#2dbf6e'; // 盈红亏绿
   retEl.style.fontSize = '22px';
   retEl.style.fontWeight = '700';
-  // 操作按钮状态：持多禁做空、持空禁做多、现金耗尽禁开仓
+  // 操作按钮状态：现金耗尽禁买入；卖出始终可点（无持仓时点击给出提示弹窗）
   const canTrade = G.started && !G.over;
-  document.getElementById('longBtn').disabled = !canTrade || G.pos < 0 || G.cash <= 1;
-  document.getElementById('shortBtn').disabled = !canTrade || G.pos > 0 || G.cash <= 1;
-  document.getElementById('flatBtn').disabled = !canTrade || G.pos === 0;
+  document.getElementById('longBtn').disabled = !canTrade || G.cash <= 1;
+  document.getElementById('shortBtn').disabled = !canTrade;
   document.getElementById('nextBtn').disabled = !canTrade;
 }
 function fmtQty(q){ return q>=1000? (q/1000).toFixed(2)+'k' : q.toFixed(0); }
@@ -1141,9 +1161,9 @@ document.querySelectorAll('.btn.lev').forEach(b=> b.addEventListener('click', ()
 }));
 document.getElementById('nextBtn').addEventListener('click', stepNext);
 document.getElementById('startBtn').addEventListener('click', startTrade);
-document.getElementById('longBtn').addEventListener('click', doLong);
-document.getElementById('shortBtn').addEventListener('click', doShort);
-document.getElementById('flatBtn').addEventListener('click', ()=>{ if(G.pos!==0){ flatPosition(curPrice()); checkLiquidation(); updateUI(); draw(); } });
+document.getElementById('longBtn').addEventListener('click', doBuy);
+document.getElementById('shortBtn').addEventListener('click', doSell);
+document.getElementById('tipOk').addEventListener('click', hideTip);
 // 买入仓位选择：1/4、1/3、1/2、全仓（按剩余资金比例开仓）
 document.querySelectorAll('.btn.pos').forEach(b=> b.addEventListener('click', ()=>{
   document.querySelectorAll('.btn.pos').forEach(x=>x.classList.remove('active'));
