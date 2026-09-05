@@ -63,11 +63,11 @@
     color: #052018; font-weight: 700; box-shadow: 0 4px 14px rgba(45,212,160,.2);
   }
   button.btn.short:hover { filter: brightness(1.08); }
-  /* 下一步按钮：橙色加大加粗 */
+  /* 下一步按钮：蓝色（区别于买入橙/卖出青绿） */
   button.btn.next {
-    background: linear-gradient(180deg,#ff8a3d,#ff5f0a); border: 1px solid #ff9a52;
+    background: linear-gradient(180deg,#5b8dff,#3a63e0); border: 1px solid #7aa2ff;
     color: #fff; font-weight: 700; padding: 13px; font-size: 15px; letter-spacing: 2px;
-    border-radius: 11px; box-shadow: 0 6px 18px rgba(255,106,26,.35);
+    border-radius: 11px; box-shadow: 0 6px 18px rgba(70,110,255,.32);
   }
   button.btn.next:hover { filter: brightness(1.08); }
   /* 仓位选择按钮 */
@@ -83,9 +83,10 @@
   }
   button.avatar:hover { filter: brightness(1.1); }
   button.avatar.logged { background: linear-gradient(180deg,#a055bd,#7d3a9e); border-color: #c07dd8; box-shadow: 0 4px 12px rgba(160,80,200,.35); }
-  /* 顶部放大的价格与涨跌率 */
-  .price-big { font-size: 26px; font-weight: 700; color: var(--txt); line-height: 1; font-variant-numeric: tabular-nums; }
-  .chg-big { font-size: 20px; font-weight: 700; line-height: 1; margin-left: 10px; font-variant-numeric: tabular-nums; }
+  /* 顶栏放大的价格与涨跌率 */
+  .top-price { display: flex; align-items: baseline; gap: 10px; margin-left: auto; padding-right: 4px; }
+  .price-big { font-size: 24px; font-weight: 700; color: var(--txt); line-height: 1; font-variant-numeric: tabular-nums; }
+  .chg-big { font-size: 17px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
   .info { color: var(--txt2); font-size: 12px; }
   .info b { color: var(--txt); }
   .up { color: var(--up); }
@@ -94,12 +95,9 @@
   /* 主体 */
   .main { display: flex; flex: 1; min-height: 0; }
   .chart-wrap { flex: 1; position: relative; min-width: 0; }
-  canvas#chart { display: block; width: 100%; height: 100%; background: var(--bg); cursor: crosshair; }
-  .price-overlay {
-    position: absolute; top: 10px; right: 76px; display: flex; align-items: center;
-    padding: 8px 14px; background: rgba(16,18,22,.82); border: 1px solid var(--border);
-    border-radius: 10px; z-index: 5; pointer-events: none; backdrop-filter: blur(6px);
-  }
+  canvas#chart { display: block; width: 100%; height: 100%; background: var(--bg); cursor: grab; }
+  canvas#chart.grabbing { cursor: grabbing; }
+  canvas#chart.cross { cursor: crosshair; }
   /* 结算弹窗关闭后的浮动操作条 */
   .end-float {
     position: absolute; right: 14px; bottom: 14px; z-index: 6; display: none;
@@ -203,9 +201,14 @@
       <button class="btn lev" data-lev="10">10x</button>
       <button class="btn lev" data-lev="20">20x</button>
     </div>
-    <!-- 右上角头像：个人中心入口（游客显示"客"，登录显示手机号后4位/首字符） -->
-    <div class="group" style="margin-left:auto;">
-      <button class="avatar" id="avatarBtn" title="个人中心（游客）">客</button>
+    <!-- 顶栏价格 + 涨跌率 -->
+    <div class="top-price">
+      <span class="price-big" id="curPrice">--</span>
+      <span class="chg-big" id="dayChg">--</span>
+    </div>
+    <!-- 右上角头像：个人中心入口 -->
+    <div class="group">
+      <button class="avatar" id="avatarBtn">客</button>
     </div>
   </div>
 
@@ -213,27 +216,28 @@
   <div class="main">
     <div class="chart-wrap">
       <canvas id="chart"></canvas>
-      <!-- 图表右上角：放大价格 + 涨跌率浮层 -->
-      <div class="price-overlay">
-        <span class="price-big" id="curPrice">--</span>
-        <span class="chg-big" id="dayChg">--</span>
-      </div>
       <!-- 结算弹窗被X关闭后，右下角浮动操作条 -->
       <div class="end-float" id="endFloat">
         <button class="btn long" id="floatAgain">再来一局</button>
         <button class="btn" id="floatReview">复盘</button>
       </div>
+      <!-- 开局弹窗被X关闭后，右下角浮动开始条 -->
+      <div class="end-float" id="startFloat">
+        <button class="btn next" id="floatStart">开始交易</button>
+        <button class="btn" id="floatCenter">个人中心</button>
+      </div>
+      <!-- 拖动回看历史时，底部居中"回到最新"按钮 -->
+      <button class="btn next" id="toLatest"
+        style="display:none;position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:6;padding:8px 20px;font-size:13px;letter-spacing:1px;">回到最新 →</button>
       <!-- 开局弹窗 -->
       <div class="mask show" id="startMask">
         <div class="dialog">
+          <button class="dlg-x" id="startX">×</button>
           <h2>模拟股票交易</h2>
-          <div class="sub" id="dataStatus">正在后台筛选符合资金条件的A股真实行情…</div>
-          <div class="sub">规则：走满 60 根日K结算，保证金率 ≤ 50% 爆仓</div>
-          <div class="sub">每根日K两个操作点：<b style="color:var(--accent2)">开盘点</b> / <b style="color:#45e8bd">收盘点</b>，点「下一步」推进；严格 T+1，当日买入次日才能卖</div>
-          <div class="sub hint">股票身份已隐藏，结算时揭晓 · 数据来源：东方财富</div>
+          <div class="sub" id="dataStatus">正在后台筛选A股真实行情…</div>
           <div style="display:flex;justify-content:center;gap:10px;margin-top:6px;">
             <button class="btn next" id="startBtn" disabled>开始交易</button>
-            <button class="btn" id="retryBtn" style="display:none;">重试加载行情</button>
+            <button class="btn" id="retryBtn" style="display:none;">重试加载</button>
             <button class="btn" id="centerBtn">个人中心</button>
           </div>
         </div>
@@ -294,7 +298,7 @@
             </div>
             <div id="loginForm" style="display:none;text-align:left;margin:8px auto;max-width:320px;">
               <div class="sub" style="text-align:left;">手机号 / 邮箱</div>
-              <input id="loginUser" type="text" placeholder="输入手机号或邮箱"
+              <input id="loginUser" type="text" placeholder="手机号或邮箱"
                 style="width:100%;padding:8px;margin:4px 0 8px;background:#060708;border:1px solid rgba(255,255,255,.12);color:#f2f4f8;border-radius:8px;box-sizing:border-box;">
               <div style="display:flex;gap:8px;align-items:center;">
                 <input id="loginCode" type="text" placeholder="验证码"
@@ -303,20 +307,26 @@
               </div>
               <div id="codeDisplay" style="color:#f5c864;font-size:12px;min-height:18px;margin:6px 0;"></div>
               <button class="btn next" id="doLogin" style="width:100%;">登录</button>
-              <div class="hint" style="text-align:center;margin-top:6px;">模拟模式：验证码直接显示在上方，无需真实短信</div>
             </div>
             <div id="guestHint">
-              <div class="sub hint" style="margin:8px 0;">游客模式可直接使用全部功能：历史记录、复盘、资金设置</div>
-              <button class="btn next" id="guestBtn" style="padding:9px 30px;">直接进入</button>
+              <button class="btn next" id="guestBtn" style="padding:9px 30px;margin-top:8px;">直接进入</button>
             </div>
           </div>
-          <!-- 主块（历史记录+设置） -->
+          <!-- 主块（昵称 + 资金 + 历史记录） -->
           <div id="centerMain" style="display:none;">
             <div style="text-align:left;margin-bottom:8px;">
               <div class="sub" style="text-align:left;">当前用户：<b id="curUser" style="color:#e6e9f0;"></b></div>
             </div>
             <div style="text-align:left;">
-              <div class="sub" style="text-align:left;font-weight:700;color:#e6e9f0;">初始资金设置</div>
+              <div class="sub" style="text-align:left;font-weight:700;color:#e6e9f0;">昵称</div>
+              <div style="display:flex;gap:8px;margin:6px 0 10px;">
+                <input id="nickInput" type="text" maxlength="12" placeholder="输入昵称"
+                  style="flex:1;padding:8px;background:#060708;border:1px solid rgba(255,255,255,.12);color:#f2f4f8;border-radius:8px;box-sizing:border-box;">
+                <button class="btn" id="nickSave" style="padding:8px 16px;white-space:nowrap;">保存</button>
+              </div>
+            </div>
+            <div style="text-align:left;">
+              <div class="sub" style="text-align:left;font-weight:700;color:#e6e9f0;">初始资金</div>
               <div style="display:flex;gap:6px;margin:6px 0;">
                 <button class="btn pos" data-cap="100000">10万</button>
                 <button class="btn pos" data-cap="500000">50万</button>
@@ -324,10 +334,9 @@
                 <input id="capCustom" type="number" placeholder="自定义" min="10000"
                   style="width:90px;padding:6px;background:#060708;border:1px solid rgba(255,255,255,.12);color:#f2f4f8;border-radius:8px;">
               </div>
-              <div class="hint" style="margin-bottom:10px;">按资金自动匹配可买得起的股票（至少1手=100股）</div>
             </div>
-            <div style="text-align:left;">
-              <div class="sub" style="text-align:left;font-weight:700;color:#e6e9f0;">历史记录 <span class="hint" style="font-weight:400;">（最近20条 + 存档，点击复盘可回顾）</span></div>
+            <div style="text-align:left;margin-top:6px;">
+              <div class="sub" style="text-align:left;font-weight:700;color:#e6e9f0;">历史记录</div>
               <div id="histList" style="max-height:300px;overflow-y:auto;margin-top:6px;"></div>
             </div>
             <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;">
@@ -345,37 +354,31 @@
       <div class="hero-stat">
         <div class="hero-label">收益率</div>
         <div class="hero-val" id="heroRet" style="color:var(--txt3);">0.00%</div>
-        <div class="hero-sub" id="heroRetSub">初始资金 1,000,000.00</div>
       </div>
       <!-- 重点指标：可用资金 -->
       <div class="hero-stat">
         <div class="hero-label">可用资金</div>
-        <div class="hero-val" id="heroCash" style="color:var(--accent2);">1,000,000.00</div>
-        <div class="hero-sub" id="heroCashSub">现金（含已释放保证金）</div>
+        <div class="hero-val" id="heroCash" style="color:var(--accent2);">--</div>
       </div>
       <!-- 折叠详情 -->
       <button class="hero-toggle" id="detailToggle">账户详情 ▸</button>
       <div class="hero-detail" id="detailBox">
         <div class="panel" style="margin-bottom:10px;">
-          <div class="row"><span class="k">总资产</span><span class="v" id="total">1,000,000.00</span></div>
-          <div class="row"><span class="k">持仓</span><span class="v" id="pos">空仓</span></div>
-          <div class="row"><span class="k">可卖持仓(T+1)</span><span class="v" id="sellable">0</span></div>
+          <div class="row"><span class="k">总资产</span><span class="v" id="total">--</span></div>
+          <div class="row"><span class="k">持仓</span><span class="v" id="pos">0</span></div>
+          <div class="row"><span class="k">可卖</span><span class="v" id="sellable">0</span></div>
           <div class="row"><span class="k">开仓均价</span><span class="v" id="entry">--</span></div>
           <div class="row"><span class="k">浮动盈亏</span><span class="v" id="pnl">0.00</span></div>
-          <div class="row"><span class="k">保证金占用</span><span class="v" id="margin">0.00</span></div>
+          <div class="row"><span class="k">保证金</span><span class="v" id="margin">0.00</span></div>
           <div class="row"><span class="k">保证金率</span><span class="v" id="mr">--</span></div>
-          <div class="row"><span class="k">手续费率</span><span class="v">0.1%（买卖各收）</span></div>
-          <div class="row"><span class="k">收益率</span><span class="v" id="ret">0.00%</span></div>
         </div>
       </div>
 
       <div class="panel">
-        <h3>操作</h3>
-        <!-- 当前操作点状态 -->
         <div class="phase-tag open" id="phaseTag">等待开局</div>
         <div class="ops">
-          <button class="btn long" id="longBtn" disabled>买入（开盘价/收盘价）</button>
-          <button class="btn short" id="shortBtn" disabled>卖出（T+1：仅可卖昨日及之前持仓）</button>
+          <button class="btn long" id="longBtn" disabled>买入</button>
+          <button class="btn short" id="shortBtn" disabled>卖出</button>
           <button class="btn next" id="nextBtn" disabled>下一步 →</button>
         </div>
         <div class="pos-row" style="display:flex;gap:4px;margin-top:8px;">
@@ -383,18 +386,6 @@
           <button class="btn pos" data-frac="0.333333" style="flex:1;">1/3</button>
           <button class="btn pos" data-frac="0.5" style="flex:1;">1/2</button>
           <button class="btn pos active" data-frac="1" style="flex:1;">全仓</button>
-        </div>
-      </div>
-
-      <div class="panel">
-        <h3>说明</h3>
-        <div class="hint">
-          · 每局随机一只A股真实历史日K（东方财富数据），身份结算时揭晓。<br>
-          · 每根日K有两个操作点：<b style="color:var(--accent2)">开盘点</b>（按开盘价成交）和<b style="color:#45e8bd">收盘点</b>（按收盘价成交），点「下一步」推进。<br>
-          · 严格 <b>T+1</b>：当日买入的股票当日不能卖，下一交易日才可卖；卖出按买入批次先进先出。<br>
-          · 仓位选择：买入=按可用资金比例，卖出=按可卖持仓比例；可分批加仓（开仓价加权平均）。<br>
-          · 走满 60 根日K结算；手续费 0.1%（买卖各收）；杠杆越高风险越大，保证金率≤50% 爆仓。<br>
-          · 上涨橙色K，下跌青绿K；主图可切 MA/BOLL，副图可切 VOL/MACD。
         </div>
       </div>
     </div>
@@ -492,6 +483,7 @@ function buildSnapshot(){
     sim: G.real ? null : {startDate: '', endDate: '', marketType: '', marketRet: 0},
     daily: daily.map(b => [b.o, b.h, b.l, b.c, b.v]),
     dates: dates,
+    tradeDay0: G.tradeDay0,
     trades: G.trades.map(t => ({dir: t.dir, tick: t.tick, price: t.price, qty: t.qty, pnl: t.pnl}))
   };
   return snap;
@@ -709,20 +701,19 @@ function updateStartStatus(err){
   const btn = document.getElementById('startBtn');
   const currentReady = G && !G.loading;   // 当前局行情是否已就绪可开玩
   if(readyMarket && readyMarket.cap === cap){
-    st.textContent = '已在后台为你筛选好符合资金条件的A股（1手100股×股价 ≤ ' + fmt(cap) + '），股票身份已隐藏，点击开始直接开战';
+    st.textContent = '行情已就绪';
     btn.disabled = false;
     btn.textContent = '开始交易';
   }else if(currentReady){
-    // 本局已就绪可玩，后台同时在预筛下一局
-    st.textContent = '行情已就绪，点击“开始交易”直接开战（后台正在预选下一局）';
+    st.textContent = '行情已就绪';
     btn.disabled = false;
     btn.textContent = '开始交易';
   }else if(err){
-    st.textContent = '真实行情暂时筛选失败（' + err.message + '），点击开始将使用模拟行情，后台仍会继续筛选';
+    st.textContent = '行情加载失败，将使用模拟行情';
     btn.disabled = false;
     btn.textContent = '开始交易';
   }else{
-    st.textContent = '正在后台按你的资金筛选“买得起1手”的A股…';
+    st.textContent = '行情加载中…';
     btn.disabled = true;
     btn.textContent = '筛选中…';
   }
@@ -857,6 +848,8 @@ async function newGame(autoStart){
     curBar: 0,            // T+1：当前交易日K线索引（0-59）
     phase: 'open',        // T+1：当前操作点 'open'=开盘点 / 'close'=收盘点
     lots: [],             // T+1：买入批次 [{qty, price, bar, margin}]，bar=买入日索引
+    tradeDay0: CFG.histDayBars,  // 第0个交易日在日K数组中的下标（历史行情总数）
+    view: { count: 140, back: 0 }, // 图表视窗：可见K线数 / 向右回看的根数（0=跟随最新）
     marginUsed: 0,        // 保证金占用
     realized: 0,          // 已实现盈亏（统计用）
     tradeCount: 0,        // 交易次数
@@ -873,6 +866,7 @@ async function newGame(autoStart){
   hideTip();
   document.getElementById('retryBtn').style.display = 'none';
   document.getElementById('endFloat').classList.remove('show');
+  document.getElementById('startFloat').classList.remove('show');
   document.getElementById('nextBtn').disabled = true;
   document.getElementById('longBtn').disabled = true;
   document.getElementById('shortBtn').disabled = true;
@@ -884,15 +878,16 @@ async function newGame(autoStart){
   // 直接取用后台已预选好的股票；尚未就绪则等待后台筛选（点开始无需等待加载）
   const r = await ensureMarket(cap);
   if(r){
-    const daily = r.bars.slice(r.startIdx - 100, r.startIdx + 60);  // 160根：100历史 + 60交易
+    const daily = r.bars.slice(0, r.startIdx + CFG.settleDayBars);  // 全部历史 + 60交易日
+    G.tradeDay0 = daily.length - CFG.settleDayBars;
     G.real = {
       code: r.pick.code, name: r.pick.name,
-      daily: daily, tradeDays: daily.slice(100),
-      marketRet: (daily[daily.length-1].c / daily[100].o - 1) * 100,   // 开盘买入持有收益
+      daily: daily, tradeDays: daily.slice(G.tradeDay0),
+      marketRet: (daily[daily.length-1].c / daily[G.tradeDay0].o - 1) * 100,   // 开盘买入持有收益
     };
     G.real.marketType = classifyMarket(G.real.tradeDays);
     G.tickOHLC = realBarsToTicks(daily);
-    G.curTickIdx = CFG.histDayBars * CFG.dayTicks - 1;   // 定位到历史区末尾（第100天收盘），交易区60天待逐步推进
+    G.curTickIdx = G.tradeDay0 * CFG.dayTicks - 1;   // 定位到交易区前一根（历史末根收盘）
     G.loading = false;
     updateStartStatus();
     updateUI(); draw();
@@ -901,12 +896,13 @@ async function newGame(autoStart){
   }else{
     // 后台筛选失败：本局回退模拟行情，后台继续为下一局筛选真实行情
     G.loading = false;
-    document.getElementById('dataStatus').textContent = '真实行情暂时筛选失败，本局改用模拟行情（后台仍在继续筛选）';
+    document.getElementById('dataStatus').textContent = '模拟行情';
     document.getElementById('startBtn').disabled = false;
     document.getElementById('startBtn').textContent = '开始交易';
     document.getElementById('retryBtn').style.display = '';
     lastPrice = CFG.startPrice;
-    genTicks(CFG.histDayBars * CFG.dayTicks);
+    G.tradeDay0 = 260;   // 模拟行情：260日历史供回看
+    genTicks(G.tradeDay0 * CFG.dayTicks);
     G.curTickIdx = G.tickOHLC.length - 1;
     updateUI(); draw();
     kickBackgroundPick();
@@ -936,18 +932,11 @@ function genTicks(n){
 /* 聚合：给定周期与结束tick索引，返回该周期K线数组（用于绘图，取最近N根） */
 function agg(tf, endIdx){
   const step = CFG.tfs[tf];
-  // 对齐：使 endIdx 处于某根周期K线的末尾
-  // 周期K线 i 覆盖 tick [i*step, i*step+step-1]
-  // 这里以tick索引0为某周期起点对齐
+  // 周期K线 b 覆盖 tick [b*step, b*step+step-1]；只聚合到 endIdx（未发生的tick不显示）
   const bars = [];
-  // 总根数（完整）
-  const totalBars = Math.floor((endIdx+1)/step);
-  // 限制绘图数量
-  const showBars = 140;
-  const startBar = Math.max(0, totalBars - showBars);
-  for(let b=startBar; b<totalBars; b++){
+  const totalBars = Math.floor((endIdx+1)/step);   // 完整K线数
+  for(let b=0; b<totalBars; b++){
     const s = b*step, e = s+step-1;
-    if(e > endIdx) break;
     const t0 = G.tickOHLC[s];
     let o=t0.o, h=t0.h, l=t0.l, c=G.tickOHLC[e].c, v=0;
     for(let k=s;k<=e;k++){
@@ -956,8 +945,30 @@ function agg(tf, endIdx){
       if(t.l<l) l=t.l;
       v+=t.v;
     }
-    bars.push({o,h,l,c,v, idx:b, sTick:s, eTick:e,
+    bars.push({o,h,l,c,v, idx:b, sTick:s, eTick:e, partial:false,
                date: (G.real && G.real.daily[Math.floor(e/CFG.dayTicks)]) ? G.real.daily[Math.floor(e/CFG.dayTicks)].date : null});
+  }
+  // 正在形成的K线（当前周期尚未走完）：只含已发生的tick，实时变化
+  const rem = (endIdx+1) % step;
+  if(rem > 0){
+    const b = totalBars, s = b*step, e = endIdx;
+    const t0 = G.tickOHLC[s];
+    let o=t0.o, h=t0.h, l=t0.l, c=G.tickOHLC[e].c, v=0;
+    for(let k=s;k<=e;k++){
+      const t=G.tickOHLC[k];
+      if(t.h>h) h=t.h;
+      if(t.l<l) l=t.l;
+      v+=t.v;
+    }
+    bars.push({o,h,l,c,v, idx:b, sTick:s, eTick:e, partial:true,
+               date: (G.real && G.real.daily[Math.floor(e/CFG.dayTicks)]) ? G.real.daily[Math.floor(e/CFG.dayTicks)].date : null});
+  }
+  // 开盘点：当日只有开盘价已知，正在形成的K线（任何周期）强制为单根开盘价，
+  // 不泄漏当日后续走势（tick数据已预生成但不得提前显示）
+  if(G && G.started && !G.over && G.phase === 'open' && bars.length){
+    const openPx = G.tickOHLC[endIdx].o;
+    const lb = bars[bars.length-1];
+    lb.o = lb.h = lb.l = lb.c = openPx; lb.v = 0; lb.partial = true;
   }
   return bars;
 }
@@ -982,7 +993,7 @@ function sellableQty(){
 /* ===================== 推进 ===================== */
 function stepNext(){
   if(!G.started || G.over) return;
-  const base = (CFG.histDayBars + G.curBar) * CFG.dayTicks;
+  const base = (G.tradeDay0 + G.curBar) * CFG.dayTicks;
   if(G.phase === 'open'){
     // 开盘点 → 收盘点：揭示当日完整日K
     G.phase = 'close';
@@ -993,7 +1004,7 @@ function stepNext(){
     G.curBar++;
     if(G.curBar >= CFG.settleDayBars){ settle('60根日K已走完'); return; }
     G.phase = 'open';
-    G.curTickIdx = (CFG.histDayBars + G.curBar) * CFG.dayTicks;
+    G.curTickIdx = (G.tradeDay0 + G.curBar) * CFG.dayTicks;
   }
   const need = G.curTickIdx + 1;                 // 模拟行情需增量生成tick
   if(need > G.tickOHLC.length) genTicks(need - G.tickOHLC.length);
@@ -1005,12 +1016,14 @@ function startTrade(){
   G.started = true;
   G.curBar = 0;
   G.phase = 'open';
-  G.tradeStartTick = CFG.histDayBars * CFG.dayTicks - 1;        // 交易起点竖线（历史末根）
-  G.curTickIdx = CFG.histDayBars * CFG.dayTicks;               // 第0交易日开盘tick
-  // 模拟行情按需增量生成tick（真实行情已一次性生成160日）
+  G.view.back = 0;                     // 开局回到跟随最新
+  G.tradeStartTick = G.tradeDay0 * CFG.dayTicks - 1;        // 交易起点竖线（历史末根）
+  G.curTickIdx = G.tradeDay0 * CFG.dayTicks;               // 第0交易日开盘tick
+  // 模拟行情按需增量生成tick（真实行情已一次性生成）
   const need = G.curTickIdx + 1;
   if(need > G.tickOHLC.length) genTicks(need - G.tickOHLC.length);
   document.getElementById('startMask').classList.remove('show');
+  document.getElementById('startFloat').classList.remove('show');
   document.getElementById('endFloat').classList.remove('show');
   document.getElementById('nextBtn').disabled = false;
   document.getElementById('longBtn').disabled = false;
@@ -1297,9 +1310,10 @@ function drawReviewChart(){
     const y = padT + mainH * i / 4;
     ctx.fillText(p.toFixed(2), W - padR + 4, y + 3);
   }
-  // 交易起点虚线（第100根=历史区与交易区分界）
-  if(n > 100){
-    const x = xAt(100);
+  // 交易起点虚线（历史区与交易区分界）
+  const tradeDay0 = (snap.tradeDay0 != null) ? snap.tradeDay0 : (n - CFG.settleDayBars);
+  if(tradeDay0 > 0 && tradeDay0 < n){
+    const x = xAt(tradeDay0);
     ctx.strokeStyle = 'rgba(255,138,61,.5)';
     ctx.setLineDash([3,3]);
     ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + mainH); ctx.stroke();
@@ -1370,7 +1384,7 @@ function drawReviewChart(){
 }
 
 /* ===================== 个人中心 ===================== */
-/* 右上角头像：游客显示"客"（蓝色）；登录用户显示手机号后4位/账号首字符（紫色） */
+/* 右上角头像：昵称首字（游客默认"客"）；登录用户显示手机号后4位/账号首字符（紫色） */
 function refreshAvatar(){
   const s = loadSettings();
   const btn = document.getElementById('avatarBtn');
@@ -1378,11 +1392,10 @@ function refreshAvatar(){
     const u = String(s.user);
     btn.textContent = /^1\d{10}$/.test(u) ? u.slice(-4) : (u[0] || '我').toUpperCase();
     btn.classList.add('logged');
-    btn.title = '个人中心（' + u + '）';
   }else{
-    btn.textContent = '客';
+    const nick = (s.nick || '').trim();
+    btn.textContent = nick ? nick[0].toUpperCase() : '客';
     btn.classList.remove('logged');
-    btn.title = '个人中心（游客）';
   }
 }
 function openCenter(){
@@ -1409,11 +1422,21 @@ function showCenterMain(){
   document.getElementById('centerMain').style.display = '';
   const s = loadSettings();
   document.getElementById('curUser').textContent =
-    s.mode === 'login' ? s.user : '游客';
+    s.mode === 'login' ? s.user : (s.nick || '游客');
+  document.getElementById('nickInput').value = s.nick || '';
   // 资金按钮选中态
   const capBtns = document.querySelectorAll('#centerMain .btn.pos[data-cap]');
   capBtns.forEach(b => b.classList.toggle('active', parseFloat(b.dataset.cap) === s.initCash));
   renderHistory();
+}
+function saveNick(){
+  const nick = document.getElementById('nickInput').value.trim().slice(0, 12);
+  const s = loadSettings();
+  s.nick = nick;
+  saveSettings(s);
+  refreshAvatar();
+  showCenterMain();
+  showTip(nick ? ('昵称已保存：' + nick) : '昵称已清空');
 }
 function setLoginTab(tab){
   document.getElementById('modeGuest').classList.toggle('active', tab === 'guest');
@@ -1438,7 +1461,7 @@ function sendCode(){
   const s = loadSettings();
   s.code = code;
   saveSettings(s);
-  document.getElementById('codeDisplay').textContent = '验证码：' + code + '（模拟发送，无需真实短信）';
+  document.getElementById('codeDisplay').textContent = '验证码：' + code;
 }
 function doLogin(){
   const user = document.getElementById('loginUser').value.trim();
@@ -1562,15 +1585,15 @@ function updateUI(){
     const deal = curPrice();
     if(G.phase === 'open'){
       phaseTag.className = 'phase-tag open';
-      phaseTag.textContent = '第 ' + (G.curBar+1) + '/' + CFG.settleDayBars + ' 根 · 开盘点 · 成交价 ' + deal.toFixed(2);
+      phaseTag.textContent = (G.curBar+1) + '/' + CFG.settleDayBars + ' · 开盘 · ' + deal.toFixed(2);
     }else{
       phaseTag.className = 'phase-tag close';
-      phaseTag.textContent = '第 ' + (G.curBar+1) + '/' + CFG.settleDayBars + ' 根 · 收盘点 · 成交价 ' + deal.toFixed(2);
+      phaseTag.textContent = (G.curBar+1) + '/' + CFG.settleDayBars + ' · 收盘 · ' + deal.toFixed(2);
     }
   } else if(G.over){
     document.getElementById('dayProg').textContent = CFG.settleDayBars + '/' + CFG.settleDayBars;
     phaseTag.className = 'phase-tag close';
-    phaseTag.textContent = '本局已结束';
+    phaseTag.textContent = '已结算';
   } else {
     document.getElementById('dayProg').textContent = '0/' + CFG.settleDayBars;
     phaseTag.className = 'phase-tag open';
@@ -1584,26 +1607,19 @@ function updateUI(){
   const heroRet = document.getElementById('heroRet');
   heroRet.textContent = (ret>=0?'+':'') + ret.toFixed(2) + '%';
   heroRet.style.color = ret>=0 ? 'var(--up)' : 'var(--down)';
-  document.getElementById('heroRetSub').textContent = '总资产 ' + fmt(total) + ' · 初始 ' + fmt(G.initCash);
   // hero：可用资金
   document.getElementById('heroCash').textContent = fmt(G.cash);
-  document.getElementById('heroCashSub').textContent = G.pos>0 ? ('持仓占用保证金 ' + fmt(G.marginUsed)) : '当前空仓';
   // 折叠详情
   document.getElementById('total').textContent = fmt(total);
   const sellable = G.started ? sellableQty() : 0;
-  document.getElementById('pos').textContent = G.pos===0?'空仓（未买入）':('持有 '+fmtQty(G.pos));
-  document.getElementById('sellable').textContent = G.pos===0?'0':fmtQty(sellable) + (sellable<=0?'（当日买入，T+1冻结）':'');
+  document.getElementById('pos').textContent = G.pos===0?'0':fmtQty(G.pos);
+  document.getElementById('sellable').textContent = G.pos===0?'0':fmtQty(sellable);
   document.getElementById('entry').textContent = G.pos===0?'--':G.entry.toFixed(2);
   const pnlEl = document.getElementById('pnl');
   pnlEl.textContent = (fp>=0?'+':'') + fmt(fp);
   pnlEl.className = 'v ' + (fp>0?'up':(fp<0?'down':''));
   document.getElementById('margin').textContent = fmt(G.marginUsed);
   document.getElementById('mr').textContent = G.pos===0?'--':((marginRatio(p)*100).toFixed(1)+'%');
-  const retEl = document.getElementById('ret');
-  retEl.textContent = (ret>=0?'+':'') + ret.toFixed(2) + '%';
-  retEl.style.color = ret>=0? 'var(--up)':'var(--down)';
-  retEl.style.fontSize = '14px';
-  retEl.style.fontWeight = '700';
   // 操作按钮状态：现金耗尽禁买入；卖出始终可点（无持仓/无可卖时点击给出提示弹窗）
   const canTrade = G.started && !G.over;
   document.getElementById('longBtn').disabled = !canTrade || G.cash <= 1;
@@ -1635,6 +1651,7 @@ cvs.addEventListener('mousemove', e=>{
 });
 cvs.addEventListener('mouseleave', ()=>{ mouse.in=false; draw(); });
 cvs.addEventListener('click', e=>{
+  if(drag.moved) return;   // 拖动平移后的松手不触发指标切换
   const r = cvs.getBoundingClientRect();
   const x = e.clientX - r.left, y = e.clientY - r.top;
   for(const b of indBtns){
@@ -1645,13 +1662,68 @@ cvs.addEventListener('click', e=>{
     }
   }
 });
+/* 滚轮缩放：以鼠标位置为锚点；左右拖动平移回看历史；双击回到最新 */
+const drag = {on:false, startX:0, startBack:0, moved:false};
+function chartBars(){ return agg(G.tf, G.curTickIdx); }
+cvs.addEventListener('wheel', e=>{
+  e.preventDefault();
+  if(!G || !G.tickOHLC.length) return;
+  const total = chartBars().length;
+  const v = G.view;
+  const r = cvs.getBoundingClientRect();
+  const mx = e.clientX - r.left;
+  const padL = 8, padR = 64, plotW = cw - padL - padR;
+  const count0 = Math.min(Math.max(v.count|0, 20), Math.max(20, total));
+  const back0 = Math.min(Math.max(v.back|0, 0), Math.max(0, total - count0));
+  const bw0 = plotW / count0;
+  const gFloat = (total - back0 - count0) + (mx - padL)/bw0;   // 鼠标下的全局K线位置
+  const count1 = Math.min(Math.max(Math.round(count0 * (e.deltaY>0 ? 1.15 : 0.87)), 20), Math.max(20, total));
+  const bw1 = plotW / count1;
+  let back1 = total - count1 - (gFloat - (mx - padL)/bw1);
+  v.count = count1;
+  v.back = Math.min(Math.max(Math.round(back1), 0), Math.max(0, total - count1));
+  draw();
+}, {passive:false});
+cvs.addEventListener('mousedown', e=>{
+  if(!G || !G.tickOHLC.length) return;
+  const r = cvs.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  for(const b of indBtns){ if(x>=b.x && x<=b.x+b.w && y>=b.y && y<=b.y+b.h) return; }  // 指标按钮上不拖动
+  drag.on = true; drag.startX = x; drag.startBack = G.view.back|0; drag.moved = false;
+  cvs.classList.add('grabbing');
+});
+window.addEventListener('mousemove', e=>{
+  if(!drag.on) return;
+  const r = cvs.getBoundingClientRect();
+  const x = e.clientX - r.left;
+  const total = chartBars().length;
+  const padL = 8, padR = 64, plotW = cw - padL - padR;
+  const bw = plotW / Math.min(Math.max(G.view.count|0, 20), Math.max(20, total));
+  if(Math.abs(x - drag.startX) > 4) drag.moved = true;
+  G.view.back = Math.min(Math.max(Math.round(drag.startBack + (drag.startX - x)/bw), 0),
+                         Math.max(0, total - Math.min(Math.max(G.view.count|0, 20), Math.max(20, total))));
+  draw();
+});
+window.addEventListener('mouseup', ()=>{
+  if(drag.on){ drag.on = false; cvs.classList.remove('grabbing'); }
+});
+cvs.addEventListener('dblclick', ()=>{ if(G){ G.view.back = 0; draw(); } });
 
 function draw(){
   if(!G || !G.tickOHLC.length) return;   // 行情未就绪时不绘制
   if(cw===0 || ch===0) return; // 画布尺寸未就绪（resize 前），跳过首帧
   ctx.clearRect(0,0,cw,ch);
-  const bars = agg(G.tf, G.curTickIdx);
-  if(bars.length===0) return;
+  const allBars = agg(G.tf, G.curTickIdx);
+  if(allBars.length===0) return;
+
+  // 视窗：count=可见K线数（滚轮缩放），back=向右回看根数（拖动平移，0=跟随最新）
+  const total = allBars.length;
+  const view = G.view;
+  view.count = Math.min(Math.max(view.count|0, 20), Math.max(20, total));
+  view.back = Math.min(Math.max(view.back|0, 0), Math.max(0, total - view.count));
+  const back = view.back, count = view.count;
+  const visStart = Math.max(0, total - back - count);
+  const bars = allBars.slice(visStart, total - back);
 
   const trading = G.started;
 
@@ -1679,7 +1751,7 @@ function draw(){
   if(hi===lo){ hi=lo*1.01; lo=lo*0.99; }
 
   const n = bars.length;
-  const bw = plotW / n;       // 每根宽度
+  const bw = plotW / count;   // 每根槽位宽度（按视窗容量，回看历史时右侧留空）
   const barW = Math.max(1.5, bw*0.6);
 
   const xAt = i => padL + i*bw + bw/2;
@@ -1861,8 +1933,8 @@ function draw(){
     }
   }
 
-  // 未结算时的最新价线
-  if(!G.over){
+  // 未结算且最新K线在视窗内（跟随状态）时，画最新价线
+  if(!G.over && back===0){
     const p = curPrice();
     const y = yP(p);
     ctx.strokeStyle='rgba(255,138,61,.6)'; ctx.setLineDash([2,2]);
@@ -1874,9 +1946,9 @@ function draw(){
     ctx.fillText(p.toFixed(2), cw-padR+5, y);
   }
 
-  // 标题信息
-  ctx.fillStyle='#6b7280'; ctx.font='11px Microsoft YaHei'; ctx.textAlign='right'; ctx.textBaseline='top';
-  ctx.fillText('周期: '+tfName(G.tf)+'  杠杆: '+G.lev+'x' + (G.real ? '  · 真实A股' : ''), cw-padR-2, padT+2);
+  // 回看历史时显示"回到最新"按钮
+  const tl = document.getElementById('toLatest');
+  if(tl) tl.style.display = (back>0 && !G.over) ? '' : 'none';
 }
 
 function tfName(tf){ return {M:'月',W:'周',D:'日','240':'4h','60':'1h','30':'30m','15':'15m'}[tf]; }
@@ -2016,6 +2088,23 @@ document.getElementById('capCustom').addEventListener('change', e=>{
 document.getElementById('retryBtn').addEventListener('click', ()=>{
   newGame(false);
 });
+// 开始弹窗 X：关闭弹窗露出图表，右下角浮动条提供开始/个人中心
+document.getElementById('startX').addEventListener('click', ()=>{
+  document.getElementById('startMask').classList.remove('show');
+  document.getElementById('startFloat').classList.add('show');
+});
+document.getElementById('floatStart').addEventListener('click', ()=>{
+  document.getElementById('startFloat').classList.remove('show');
+  startTrade();
+});
+document.getElementById('floatCenter').addEventListener('click', openCenter);
+// 回到最新
+document.getElementById('toLatest').addEventListener('click', ()=>{ if(G){ G.view.back=0; draw(); } });
+// 昵称保存
+document.getElementById('nickSave').addEventListener('click', saveNick);
+document.getElementById('nickInput').addEventListener('keydown', e=>{
+  if(e.code === 'Enter'){ e.stopPropagation(); saveNick(); }
+});
 
 /* 键盘快捷键：结算画面按 R 重新开始 / 开始界面按任意键开始交易 */
 document.addEventListener('keydown', (e)=>{
@@ -2050,10 +2139,16 @@ document.addEventListener('keydown', (e)=>{
     }
     return;
   }
-  // 开始界面（未开始交易）：任意键开始（加载中除外）
+  // 开始弹窗打开中：Esc=最小化到浮动条，回车/空格=开始
   if(!G.started){
-    if(G.loading) return;
-    startTrade();
+    if(document.getElementById('startMask').classList.contains('show')){
+      if(e.code === 'Escape'){
+        document.getElementById('startMask').classList.remove('show');
+        document.getElementById('startFloat').classList.add('show');
+      }else if((e.code === 'Enter' || e.code === 'Space') && !G.loading){
+        e.preventDefault(); startTrade();
+      }
+    }
     return;
   }
   // 交易中快捷键：空格/回车/→ = 下一步，B = 买入，S = 卖出
