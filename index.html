@@ -1997,7 +1997,8 @@ window.addEventListener('mousemove', e=>{
   const cnt = Math.min(Math.max(v.count|0, 20), Math.max(20, total));
   const bw = plotW / cnt;
   if(Math.abs(x - drag.startX) > 4) drag.moved = true;
-  v.back = Math.min(Math.max(Math.round(drag.startBack + (drag.startX - x)/bw), 0),
+  // 抓住K线拖动：鼠标向右拖 → 视图回到更早历史（K线跟随手势向右）
+  v.back = Math.min(Math.max(Math.round(drag.startBack + (x - drag.startX)/bw), 0),
                      Math.max(0, total - cnt));
   draw();
 });
