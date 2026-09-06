@@ -333,13 +333,6 @@
       <button class="btn tf" data-tf="30">30m</button>
       <button class="btn tf" data-tf="15">15m</button>
     </div>
-    <div class="group">
-      <span class="label">杠杆</span>
-      <button class="btn lev active" data-lev="1">1x</button>
-      <button class="btn lev" data-lev="5">5x</button>
-      <button class="btn lev" data-lev="10">10x</button>
-      <button class="btn lev" data-lev="20">20x</button>
-    </div>
     <!-- 顶栏价格 + 涨跌率 -->
     <div class="top-price">
       <span class="price-big" id="curPrice">--</span>
@@ -353,7 +346,7 @@
 
   <!-- 主体 -->
   <div class="main">
-    <!-- 左侧导航：对局 / 大盘 -->
+    <!-- 左侧导航：对局 / 大盘 / 设置 -->
     <nav class="leftnav">
       <button class="nav-btn active" id="navTrade" title="对局">
         <svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 6-8"/><path d="M18 6h3v3"/></svg>
@@ -362,6 +355,10 @@
       <button class="nav-btn" id="navMarket" title="大盘">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg>
         <span>大盘</span>
+      </button>
+      <button class="nav-btn" id="navSettings" title="设置">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>设置</span>
       </button>
     </nav>
     <div class="chart-wrap">
@@ -462,12 +459,17 @@
               <button class="ind-chip" data-otype="SL">止损</button>
             </div>
             <div class="trade-line"><span>触发价格</span><b><input id="omPrice" type="number" min="0.01" step="0.01" class="om-input"> 元</b></div>
-            <div class="om-quick">
-              <button class="btn pos" data-opx="0.03">+3%</button>
-              <button class="btn pos" data-opx="0.05">+5%</button>
-              <button class="btn pos" data-opx="0.10">+10%</button>
+            <div class="om-quick" id="omQuick">
+              <!-- 由 renderOmQuick() 按设置动态生成 -->
             </div>
             <div class="trade-line"><span>卖出数量</span><b><input id="omLots" type="number" min="1" step="1" class="om-input"> 手（100股/手）</b></div>
+            <div class="trade-frac om-frac" style="margin:4px 4px 4px;">
+              <button class="btn pos" data-omfrac="0.25">1/4</button>
+              <button class="btn pos" data-omfrac="0.333333">1/3</button>
+              <button class="btn pos" data-omfrac="0.5">1/2</button>
+              <button class="btn pos" data-omfrac="1">全仓</button>
+            </div>
+            <div class="sub" id="omLotsHint" style="display:none;font-size:12px;padding:0 4px 4px;color:#f5c864;"></div>
             <div class="sub" id="omAvail" style="font-size:12.5px;padding:0 4px 6px;"></div>
             <div class="om-lots" id="omLotsList"></div>
             <label class="om-en"><input type="checkbox" id="omEnabled" checked> 创建后启用</label>
@@ -571,6 +573,47 @@
               <button class="btn next" id="centerBack">返回游戏</button>
               <button class="btn" id="logoutBtn">退出登录</button>
             </div>
+          </div>
+        </div>
+      </div>
+      <!-- 设置弹窗：杠杆 / 均线周期 / 条件单快捷按钮自定义 / 个人中心入口 -->
+      <div class="mask" id="settingsMask">
+        <div class="dialog" style="min-width:440px;max-width:92vw;max-height:92vh;overflow-y:auto;">
+          <button class="dlg-x" id="setX">×</button>
+          <h2>设置</h2>
+          <!-- 杠杆（从顶栏移入设置） -->
+          <div style="text-align:left;margin:8px 0;">
+            <div class="sub" style="text-align:left;font-weight:700;color:#e6e9f0;">杠杆倍数</div>
+            <div style="display:flex;gap:6px;margin:6px 0;" id="setLev">
+              <button class="btn lev" data-lev="1">1x</button>
+              <button class="btn lev" data-lev="5">5x</button>
+              <button class="btn lev" data-lev="10">10x</button>
+              <button class="btn lev" data-lev="20">20x</button>
+            </div>
+            <div class="hint" style="margin-top:4px;">杠杆属游戏实验参数，非真实融资融券，触发强平将强平持仓。</div>
+          </div>
+          <!-- 均线周期（可多选，含 30/60） -->
+          <div style="text-align:left;margin:10px 0;">
+            <div class="sub" style="text-align:left;font-weight:700;color:#e6e9f0;">均线周期（可多选）</div>
+            <div style="display:flex;gap:6px;margin:6px 0;flex-wrap:wrap;" id="setMa">
+              <button class="btn pos ma-chip" data-ma="5">5</button>
+              <button class="btn pos ma-chip" data-ma="10">10</button>
+              <button class="btn pos ma-chip" data-ma="20">20</button>
+              <button class="btn pos ma-chip" data-ma="30">30</button>
+              <button class="btn pos ma-chip" data-ma="60">60</button>
+            </div>
+          </div>
+          <!-- 条件单快捷按钮数值自定义 -->
+          <div style="text-align:left;margin:10px 0;">
+            <div class="sub" style="text-align:left;font-weight:700;color:#e6e9f0;">条件单快捷按钮数值</div>
+            <input id="setOmPcts" type="text" placeholder="3,5,10"
+              style="width:100%;padding:8px;background:#060708;border:1px solid rgba(255,255,255,.12);color:#f2f4f8;border-radius:8px;box-sizing:border-box;margin-top:6px;">
+            <div class="hint" style="margin-top:4px;">逗号分隔的百分比数值，如 3,5,10 表示 +3% / +5% / +10%（止损自动显示为负）</div>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap;">
+            <button class="btn next" id="setCenter">个人中心</button>
+            <button class="btn" id="setSave">保存并返回</button>
+            <button class="btn" id="setBack">取消</button>
           </div>
         </div>
       </div>
@@ -697,9 +740,10 @@ const RECENT_CAP = 20;                       // 最近记录上限（FIFO轮转�
 const ARCHIVE_CAP = 100;                      // 存档上限
 
 function loadSettings(){
-  try{ return JSON.parse(localStorage.getItem(SG_SETTINGS_KEY)) ||
-    {initCash: CFG.initCash, mode:'guest', user:'', code:''}; }
-  catch(e){ return {initCash: CFG.initCash, mode:'guest', user:'', code:''}; }
+  const def = {initCash: CFG.initCash, mode:'guest', user:'', code:'',
+               maPeriods:[5,10,20], omPcts:[0.03,0.05,0.10]};
+  try{ const s = JSON.parse(localStorage.getItem(SG_SETTINGS_KEY)); return s ? Object.assign(def, s) : def; }
+  catch(e){ return def; }
 }
 function saveSettings(s){
   try{ localStorage.setItem(SG_SETTINGS_KEY, JSON.stringify(s)); }catch(e){}
@@ -975,33 +1019,80 @@ async function kickFetchMarket(r){
         if(bk) mk.boardBars = await fetchDailyKlineEM('90.' + bk.code);
       }
     }catch(e){ /* 板块缺失不阻塞大盘页 */ }
-    // 3) 当日涨跌家数（指数快照 f104/f105/f106）
-    try{
-      const q1 = await jsonp('https://push2.eastmoney.com/api/qt/ulist.np/get?secids=' + idxSecid
-        + '&fields=f43,f104,f105,f106,f170&fltt=2', {timeout: 6000});
-      const diff = q1 && q1.data && q1.data.diff;
-      const row = Array.isArray(diff) ? diff[0] : diff ? diff[Object.keys(diff)[0]] : null;
-      if(row){
-        mk.up = row.f104 || 0; mk.down = row.f105 || 0; mk.ping = row.f106 || 0;
-        mk.idxLast = row.f43; mk.idxChg = row.f170 || 0;
-      }
-    }catch(e){}
-    // 4) 当日涨停/跌停数量（涨跌停池 tc）
-    const today = mk.idxBars[mk.idxBars.length-1].date.replace(/-/g,'');
-    try{
-      const pool = async (host) => {
-        const d = await jsonp('https://push2ex.eastmoney.com/getTopic' + host + 'Pool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1&sort=fbt:asc&date=' + today, {timeout: 6000});
-        return d && d.data ? (d.data.tc || 0) : 0;
-      };
-      const [zt, dt] = await Promise.all([pool('ZT'), pool('DT')]);
-      mk.zt = zt; mk.dt = dt;
-    }catch(e){}
+    // 3) 不再拉取实时涨跌家数/涨跌停：改为按指数日K逐日派生（与对局日K同步，不显示未来数据）
+    //    每日的上涨/下跌/平盘家数、涨停/跌停数由当日指数涨跌方向与幅度派生（按日期确定性哈希，保证复盘一致）
+    mk.dayStats = {};
+    for(const b of mk.idxBars) mk.dayStats[b.date] = deriveDayStats(b);
+    if(mk.boardBars){
+      mk.boardStats = {};
+      for(const b of mk.boardBars) mk.boardStats[b.date] = deriveDayStats(b);
+    }
+    // 当日指数涨跌率（仅用于无对局进度时的回退显示）
+    const last = mk.idxBars[mk.idxBars.length-1];
+    mk.idxLast = last.c; mk.idxChg = (last.c/last.o-1)*100;
     mk.ready = true;
   }catch(e){
     // 大盘真实数据完全失败时，回退合成指数（标注模拟数据），保证页面可用
     try{ synthMarketData(); }catch(_){ mk.failed = true; }
   }
   if(G && G.page === 'market') draw();
+}
+
+/* 确定性伪随机：按日期字符串哈希 → 每日派生涨跌家数/涨跌停（同日期结果恒定，复盘一致）
+   不使用实时行情：所有家数与对局日K同步，只显示当前股票同期的数据，不显示未来 */
+function hashStr(s){ let h=5381; for(let i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))|0; } return h; }
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function deriveDayStats(bar){
+  const chg = bar.c/bar.o - 1;
+  const upDay = chg >= 0;
+  const seed = hashStr(bar.date || (bar.o + '|' + bar.c));
+  const rng = mulberry32(seed);
+  const mag = Math.min(1, Math.abs(chg) / 0.03);   // 涨跌幅越大，家数分化越强
+  const total = 4200 + Math.floor(rng()*300);      // A 股家数约 4000+ 的近似
+  let up, down, ping;
+  if(upDay){
+    up = Math.round(total * (0.52 + mag*0.32 + rng()*0.06));
+    down = Math.round(total * (0.30 - mag*0.18 - rng()*0.06));
+    ping = total - up - down;
+  }else{
+    down = Math.round(total * (0.52 + mag*0.32 + rng()*0.06));
+    up = Math.round(total * (0.30 - mag*0.18 - rng()*0.06));
+    ping = total - up - down;
+  }
+  const zt = upDay ? Math.round(18 + mag*110 + rng()*24) : Math.round(2 + rng()*10);
+  const dt = upDay ? Math.round(2 + rng()*10) : Math.round(18 + mag*110 + rng()*24);
+  return {up, down, ping, zt, dt, chgPct: chg*100};
+}
+
+/* 大盘页：取与对局当前历史时刻同步的指数 K 线切片（不显示未来） */
+function getMktSlice(){
+  const mk = G.mkt;
+  if(!mk || !mk.ready || !mk.idxBars) return null;
+  let curDate = null;
+  if(G.real){
+    // 当前对局历史时刻对应的交易日（含条件单暂停时的日内 tick 所在日）
+    const di = G.tradeDay0 + Math.max(0, effBar());
+    if(G.started && !G.over && G.real.daily[di]) curDate = G.real.daily[di].date;
+    else if(G.real.daily.length) curDate = G.real.daily[G.real.daily.length-1].date;
+  }
+  let endIdx = mk.idxBars.length - 1;
+  if(curDate){
+    for(let i=mk.idxBars.length-1;i>=0;i--){
+      if(mk.idxBars[i].date <= curDate){ endIdx = i; break; }
+      if(i === 0) endIdx = 0;
+    }
+  }
+  const idxBars = mk.idxBars.slice(0, endIdx+1);
+  let boardBars = null;
+  if(mk.boardBars){
+    let bend = endIdx;
+    for(let i=mk.boardBars.length-1;i>=0;i--){
+      if(mk.boardBars[i].date <= curDate){ bend = i; break; }
+      if(i === 0) bend = 0;
+    }
+    boardBars = mk.boardBars.slice(0, bend+1);
+  }
+  return {idxBars, boardBars, curIdx: endIdx, curDate};
 }
 
 /* 模拟行情下：由个股日K合成相关的大盘/板块指数（低β相关 + 噪声），家数/涨跌停按涨跌日推演 */
@@ -1026,12 +1117,11 @@ function synthMarketData(){
   mk.boardBars = synth(daily, 0.7, 0.016, 1200, 40);
   const last = mk.idxBars[mk.idxBars.length-1];
   mk.idxLast = last.c; mk.idxChg = (last.c/last.o-1)*100;
-  const upDay = last.c >= last.o;
-  mk.up = upDay ? 1800 + Math.round(Math.random()*1200) : 600 + Math.round(Math.random()*800);
-  mk.down = upDay ? 600 + Math.round(Math.random()*800) : 1800 + Math.round(Math.random()*1200);
-  mk.ping = 80 + Math.round(Math.random()*120);
-  mk.zt = upDay ? 40 + Math.round(Math.random()*60) : 5 + Math.round(Math.random()*20);
-  mk.dt = upDay ? 3 + Math.round(Math.random()*15) : 20 + Math.round(Math.random()*60);
+  // 模拟行情同样按日派生家数/涨跌停，与对局日K同步（按日期确定性哈希）
+  mk.dayStats = {};
+  for(const b of mk.idxBars) mk.dayStats[b.date] = deriveDayStats(b);
+  mk.boardStats = {};
+  if(mk.boardBars) for(const b of mk.boardBars) mk.boardStats[b.date] = deriveDayStats(b);
   G.mkt = mk;
 }
 
@@ -1228,7 +1318,9 @@ async function newGame(autoStart, replayData){
     curTickIdx: -1,       // 当前已生成到的tick索引（末根）
     tradeStartTick: -1,    // 交易开始时的tick索引
     tf: 'D',              // 当前查看周期
-    lev: 1,               // 当前杠杆
+    lev: settings.lev || 1,               // 当前杠杆（从设置继承）
+    maPeriods: settings.maPeriods && settings.maPeriods.length ? settings.maPeriods.slice() : CFG.maPeriods,  // 均线周期（可自定义）
+    omPcts: settings.omPcts && settings.omPcts.length ? settings.omPcts.slice() : [0.03,0.05,0.10],  // 条件单快捷按钮数值
     mainMa: true,         // 主图指标：均线
     mainBoll: false,      // 主图指标：布林
     subInd: 'VOL',        // 副图指标 VOL/MACD/KDJ/RSI
@@ -1385,10 +1477,11 @@ function agg(tf, endIdx){
     bars.push({o,h,l,c,v, idx:b, sTick:s, eTick:e, partial:true,
                date: (G.real && G.real.daily[Math.floor(e/CFG.dayTicks)]) ? G.real.daily[Math.floor(e/CFG.dayTicks)].date : null});
   }
-  // 开盘瞬间：当日只有开盘价已知，正在形成的K线（任何周期）强制为单根开盘价，
-  // 不泄漏当日后续走势（tick数据已预生成但不得提前显示）。
-  // 条件单暂停在日内 tick 时已推进历史，正常显示已发生走势；只有落在"当日第一根tick"（开盘瞬间）才压平。
-  if(G && G.started && !G.over && bars.length && (endIdx % CFG.dayTicks) === 0){
+  // 开盘瞬间：当前周期 K 只有开盘价已知，正在形成的K线强制为单根开盘价，
+  // 不泄漏该周期后续走势（tick数据已预生成但不得提前显示）。
+  // 按当前周期 step 判断开盘点（endIdx 落在该 K 第一根 tick），条件单暂停在盘中 tick 时不压平。
+  if(G && G.started && !G.over && bars.length && G.phase === 'open'
+     && endIdx === G.curTickIdx && (endIdx % CFG.tfs[G.tf]) === 0){
     const openPx = G.tickOHLC[endIdx].o;
     const lb = bars[bars.length-1];
     lb.o = lb.h = lb.l = lb.c = openPx; lb.v = 0; lb.partial = true;
@@ -1475,16 +1568,21 @@ function scanOrders(from, to, skipIds){
 function stepNext(){
   if(!G.started || G.over) return;
   let ps = G.pendingStep;
+  // 按当前周期推进：每个周期 K 有两个操作点（开盘价/收盘价）
+  // 15分钟周期点下一步 = 下一根 15分钟 K 的开盘价→收盘价；任何周期可推进，最终 60 个交易日结束
+  const step = CFG.tfs[G.tf];
   if(!ps){
-    const base = (G.tradeDay0 + G.curBar) * CFG.dayTicks;
+    const curBarIdx = Math.floor(G.curTickIdx / step);   // 当前所在周期 K 线序号
     if(G.phase === 'open'){
-      // 开盘点 → 收盘点：逐 tick 扫描当日盘中
-      ps = {kind:'close', fromTick: G.curTickIdx, target: base + CFG.dayTicks - 1, skip: new Set()};
+      // 开盘点 → 收盘点：扫描当前周期 K 内的 tick
+      const barEnd = curBarIdx * step + step - 1;
+      ps = {kind:'close', fromTick: G.curTickIdx, target: barEnd, skip: new Set()};
     }else{
-      // 收盘点 → 下一交易日开盘点（扫描次日开盘 tick，捕捉跳空触发）
-      if(G.curBar + 1 >= CFG.settleDayBars){ settle('60根日K已走完'); return; }
-      ps = {kind:'open', fromTick: G.curTickIdx,
-            target: (G.tradeDay0 + G.curBar + 1) * CFG.dayTicks, nextBar: G.curBar + 1, skip: new Set()};
+      // 收盘点 → 下一根周期 K 开盘点（扫描期间 tick，捕捉跨周期触发）
+      const nextBarStart = (curBarIdx + 1) * step;
+      const nextDayIdx = Math.floor(nextBarStart / CFG.dayTicks) - G.tradeDay0;
+      if(nextDayIdx >= CFG.settleDayBars){ settle('60个交易日已走完'); return; }
+      ps = {kind:'open', fromTick: G.curTickIdx, target: nextBarStart, skip: new Set()};
     }
     G.pendingStep = ps;
   }
@@ -1503,8 +1601,8 @@ function stepNext(){
     checkLiquidation();
     if(G.over) return;
   }else{
-    G.curBar = ps.nextBar;
     G.phase = 'open';
+    G.curBar = Math.floor(G.curTickIdx / CFG.dayTicks) - G.tradeDay0;   // 同步当前交易日序号
   }
   ensureTicks(G.curTickIdx);
   updateUI(); draw();
@@ -1602,9 +1700,9 @@ function openTrade(dir){
   }
   document.getElementById('tradeMax').textContent = tradeMaxLots + ' 手 = ' + fmtQty(tradeMaxLots*100) + ' 股';
   const input = document.getElementById('lotInput');
-  input.value = Math.max(1, Math.floor(tradeMaxLots * G.posFrac));
+  input.value = '';   // 不设默认值，手数栏先空着，由用户输入或点快捷仓位
   mask.classList.add('show');
-  setTimeout(()=>{ input.focus(); input.select(); }, 30);
+  setTimeout(()=>{ input.focus(); }, 30);
 }
 function setTradeLots(frac){
   G.posFrac = frac;
@@ -1728,13 +1826,17 @@ function toggleOrder(id){
                  time: tickTime(G.curTickIdx).label, msg: o.enabled?'条件单启用':'条件单停用'});
 }
 function cancelOrder(id){
-  const o = G.orders.find(x=>x.id===id);
-  if(!o || o.status !== 'active') return;
+  const i = G.orders.findIndex(x=>x.id===id);
+  if(i < 0) return;
+  const o = G.orders[i];
+  if(o.status !== 'active') return;
+  // 记录取消事件（保留在对象上，便于复盘/快照追溯），然后从条件单列表中删除该条
   o.status = 'cancelled';
   o.enabled = false;
   o.cancelTick = G.curTickIdx;
   o.cancelTime = G.started ? tickTime(G.curTickIdx).label : '--';
-  o.events.push({kind:'cancel', tick: G.curTickIdx, time: o.cancelTime, msg:'条件单已取消'});
+  o.events.push({kind:'cancel', tick: G.curTickIdx, time: o.cancelTime, msg:'条件单已取消并删除'});
+  G.orders.splice(i, 1);
 }
 /* 持仓变动后：待触发条件单数量不得超过剩余持仓；不足1手则失效 */
 function reconcileOrders(){
@@ -1905,10 +2007,11 @@ let omLotLid = null;
 function openOrdersMask(){
   document.getElementById('orderMask').classList.add('show');
   omType = 'TP'; omLotLid = null;
+  renderOmQuick();
   syncOmTypeChips();
   const p = G.started ? curPrice() : 0;
   document.getElementById('omPrice').value = p ? (p * 1.05).toFixed(2) : '';
-  document.getElementById('omLots').value = G.pos >= 100 ? Math.max(1, Math.floor(G.pos/400)) : 1;
+  document.getElementById('omLots').value = '';   // 不设默认值，手数栏先空着
   document.getElementById('omEnabled').checked = true;
   renderOrderList();
   renderOmLots();
@@ -1964,11 +2067,54 @@ function updateOmAvail(){
   const sellable = sellableQty();
   el.innerHTML = '当前持仓 <b>' + fmtQty(G.pos) + '</b> 股，其中 T+1 可卖 <b style="color:var(--down)">'
     + fmtQty(sellable) + '</b> 股；数量按 100 股整数手设置，触发时超出可卖数量的部分自动调整，不足 1 手则失效。';
+  updateOmLotsHint();
+}
+/* 条件单手数快捷分仓：按 T+1 可卖持仓的 1/4,1/3,1/2,全仓 自动填入 */
+function setOmLots(frac){
+  const sellable = sellableQty();
+  const maxLots = Math.floor(sellable / 100);
+  const v = Math.max(1, Math.floor(maxLots * frac));
+  const inp = document.getElementById('omLots');
+  inp.value = maxLots > 0 ? Math.min(v, maxLots) : '';
+  updateOmLotsHint();
+}
+/* 手数不足提示：可卖持仓不足 1 手时给出黄色小字段提示 */
+function updateOmLotsHint(){
+  const el = document.getElementById('omLotsHint');
+  if(!el) return;
+  const sellable = sellableQty();
+  const maxLots = Math.floor(sellable / 100);
+  if(!G.started || G.pos <= 0){
+    el.style.display = 'block';
+    el.textContent = '当前无持仓，请先买入后再设置条件单。';
+  }else if(maxLots < 1){
+    el.style.display = 'block';
+    el.textContent = 'T+1 可卖持仓不足 1 手（100 股），条件单暂不可成交。';
+  }else{
+    el.style.display = 'none';
+    el.textContent = '';
+  }
 }
 function syncOmTypeChips(){
   document.querySelectorAll('.om-types .ind-chip').forEach(c=>{
     c.classList.toggle('on', c.dataset.otype === omType);
   });
+  // 止损用负号显示快捷比例：+3% → -3%
+  const sign = omType === 'SL' ? '-' : '+';
+  document.querySelectorAll('.om-quick .btn[data-opx]').forEach(b=>{
+    const pct = Math.round(parseFloat(b.dataset.opx) * 100);
+    b.textContent = sign + pct + '%';
+  });
+}
+/* 按设置中的 omPcts 动态生成条件单快捷按钮（数值可自定义） */
+function renderOmQuick(){
+  const el = document.getElementById('omQuick');
+  if(!el || !G || !G.omPcts) return;
+  const sign = omType === 'SL' ? '-' : '+';
+  el.innerHTML = G.omPcts.map(x=>{
+    const pct = Math.round(x * 100);
+    return '<button class="btn pos" data-opx="' + x + '">' + sign + pct + '%</button>';
+  }).join('');
 }
 function submitOrder(){
   if(!G.started || G.over){ showTip('对局未进行中，不能创建条件单。'); return; }
@@ -2461,6 +2607,56 @@ function setCapital(v){
   showTip('初始资金已设为 ' + fmt(cap) + '，后台正在重新筛选买得起的股票，下一局生效');
 }
 
+/* ===================== 设置弹窗（杠杆 / 均线周期 / 条件单快捷按钮 / 个人中心入口） ===================== */
+function openSettings(){
+  const s = loadSettings();
+  document.getElementById('settingsMask').classList.add('show');
+  // 杠杆选中态
+  document.querySelectorAll('#setLev .btn.lev').forEach(b=>{
+    b.classList.toggle('active', parseInt(b.dataset.lev) === (G ? G.lev : (s.lev || 1)));
+  });
+  // 均线周期多选
+  const periods = (G && G.maPeriods) ? G.maPeriods : (s.maPeriods || CFG.maPeriods);
+  document.querySelectorAll('#setMa .ma-chip').forEach(b=>{
+    b.classList.toggle('active', periods.includes(parseInt(b.dataset.ma)));
+  });
+  // 条件单快捷按钮数值（百分比形式 3,5,10）
+  const pcts = (G && G.omPcts) ? G.omPcts : (s.omPcts || [0.03,0.05,0.10]);
+  document.getElementById('setOmPcts').value = pcts.map(x=> Math.round(x*100)).join(',');
+}
+function closeSettings(){
+  document.getElementById('settingsMask').classList.remove('show');
+}
+function toggleMaChip(period){
+  if(!G || !G.maPeriods) return;
+  const i = G.maPeriods.indexOf(period);
+  if(i >= 0){
+    if(G.maPeriods.length <= 1){ showTip('至少保留一个均线周期'); return; }
+    G.maPeriods.splice(i, 1);
+  }else{
+    G.maPeriods.push(period);
+    G.maPeriods.sort((a,b)=>a-b);
+  }
+  const s = loadSettings(); s.maPeriods = G.maPeriods.slice(); saveSettings(s);
+  openSettings();   // 刷新选中态
+  draw();
+}
+function saveSettingsForm(){
+  const s = loadSettings();
+  // 条件单快捷按钮数值解析
+  const txt = document.getElementById('setOmPcts').value.trim();
+  if(txt){
+    const arr = txt.split(/[,，\s]+/).map(x=> parseFloat(x)).filter(x=> x>0 && x<100);
+    if(arr.length < 1){ showTip('请至少输入一个 0-100 之间的正数'); return; }
+    const pcts = arr.map(x=> x/100);
+    s.omPcts = pcts;
+    if(G) G.omPcts = pcts.slice();
+  }
+  saveSettings(s);
+  closeSettings();
+  showTip('设置已保存');
+}
+
 /* ===================== UI ===================== */
 function fmt(n){ return Number(n).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
@@ -2537,7 +2733,9 @@ function updateUI(){
   // 操作按钮状态：现金耗尽禁买入；大盘页禁用交易操作；条件单暂停时"下一步"变"继续"
   const canTrade = G.started && !G.over && G.page === 'trade';
   document.getElementById('longBtn').disabled = !canTrade || G.cash <= 1;
-  document.getElementById('shortBtn').disabled = !canTrade;
+  // 无持仓（或无T+1可卖）时卖出按钮灰色禁用
+  const canSell = canTrade && G.pos > 0 && sellableQty() >= 100;
+  document.getElementById('shortBtn').disabled = !canSell;
   document.getElementById('nextBtn').disabled = !canTrade;
   document.getElementById('nextBtn').textContent = (G.started && G.pendingStep) ? '继续 →' : '下一步 →';
   // 条件单按钮 + 待触发角标
@@ -2576,7 +2774,10 @@ cvs.addEventListener('mouseleave', ()=>{ mouse.in=false; draw(); });
 const drag = {on:false, startX:0, startBack:0, moved:false};
 function curView(){ return G.page === 'market' ? G.mktView : G.view; }
 function chartBars(){
-  if(G.page === 'market') return (G.mkt && G.mkt.ready && G.mkt.idxBars) ? G.mkt.idxBars : [];
+  if(G.page === 'market'){
+    const sl = getMktSlice();
+    return sl ? sl.idxBars : [];
+  }
   return agg(G.tf, G.curTickIdx);
 }
 cvs.addEventListener('wheel', e=>{
@@ -2667,7 +2868,7 @@ function draw(){
   // 价格范围（含主图指标）
   let hi=-Infinity, lo=Infinity;
   for(const b of bars){ if(b.h>hi)hi=b.h; if(b.l<lo)lo=b.l; }
-  const maSeries = G.mainMa ? CFG.maPeriods.map(p=> calcMA(bars,p)) : null;
+  const maSeries = G.mainMa ? G.maPeriods.map(p=> calcMA(bars,p)) : null;
   const boll = G.mainBoll ? calcBOLL(bars) : null;
   const extend = v => { if(v!==null){ if(v>hi)hi=v; if(v<lo)lo=v; } };
   if(maSeries) maSeries.forEach(ms=> ms.forEach(extend));
@@ -2731,11 +2932,11 @@ function draw(){
   }
 
   // 主图指标：MA / BOLL（可同时开启）
-  const maCols = ['#f5a623','#4fc3f7','#e040fb'];
+  const maCols = ['#f5a623','#4fc3f7','#e040fb','#a0f5a6','#f5a6a6'];
   let labelX = padL + 84;
   ctx.font='11px Consolas'; ctx.textAlign='left'; ctx.textBaseline='top';
   if(G.mainMa){
-    CFG.maPeriods.forEach((p,pi)=>{
+    G.maPeriods.forEach((p,pi)=>{
       const ms = maSeries[pi];
       ctx.strokeStyle = maCols[pi]; ctx.lineWidth=1.2;
       ctx.beginPath();
@@ -2940,34 +3141,46 @@ function drawMarket(){
   }
   if(loadingEl) loadingEl.classList.remove('show');
 
+  // 取与对局当前历史时刻同步的切片（不显示未来），并按当日指数日K派生家数/涨跌停
+  const sl = getMktSlice();
+  const idxBars = sl ? sl.idxBars : mk.idxBars;
+  if(!idxBars || !idxBars.length){
+    if(loadingEl){ loadingEl.classList.add('show'); loadingEl.textContent = '大盘数据为空'; }
+    return;
+  }
+  // 当前对局历史时刻对应日的家数/涨跌停（与对局日K同步，无对局进度时取最新一根）
+  const curBar = idxBars[idxBars.length-1];
+  const st = (mk.dayStats && mk.dayStats[curBar.date]) || {up:0,down:0,ping:0,zt:0,dt:0,chgPct:(curBar.c/curBar.o-1)*100};
   // 顶部统计条（仅在数据变化时写 DOM）
-  const sig = [mk.up,mk.down,mk.ping,mk.zt,mk.dt,mk.idxChg,mk.ready].join('|');
+  const sig = [st.up,st.down,st.ping,st.zt,st.dt,st.chgPct,curBar.date,mk.ready].join('|');
   if(statsEl && statsEl.dataset.sig !== sig){
     statsEl.dataset.sig = sig;
     const cls = v => v>=0 ? 'up' : 'down';
     const sign = v => (v>=0?'+':'') + v.toFixed(2) + '%';
     statsEl.innerHTML =
-      '<span class="mkt-chip">' + mk.idxName + '<b class="'+cls(mk.idxChg)+'">' + sign(mk.idxChg) + '</b></span>'
-      + '<span class="mkt-chip">上涨 <b class="up">' + mk.up + '</b></span>'
-      + '<span class="mkt-chip">下跌 <b class="down">' + mk.down + '</b></span>'
-      + '<span class="mkt-chip">平盘 <b>' + mk.ping + '</b></span>'
-      + '<span class="mkt-chip">涨停 <b class="up">' + mk.zt + '</b></span>'
-      + '<span class="mkt-chip">跌停 <b class="down">' + mk.dt + '</b></span>'
-      + (mk.sim ? '<span class="mkt-chip">模拟数据</span>' : '');
+      '<span class="mkt-chip">' + mk.idxName + '<b class="'+cls(st.chgPct)+'">' + sign(st.chgPct) + '</b></span>'
+      + '<span class="mkt-chip">上涨 <b class="up">' + st.up + '</b></span>'
+      + '<span class="mkt-chip">下跌 <b class="down">' + st.down + '</b></span>'
+      + '<span class="mkt-chip">平盘 <b>' + st.ping + '</b></span>'
+      + '<span class="mkt-chip">涨停 <b class="up">' + st.zt + '</b></span>'
+      + '<span class="mkt-chip">跌停 <b class="down">' + st.dt + '</b></span>'
+      + (mk.sim ? '<span class="mkt-chip">模拟数据</span>' : '')
+      + '<span class="mkt-chip" style="color:#9aa0aa;">截至 ' + (curBar.date || '--') + '</span>';
   }
 
   const padL = 8, padR = 64;
   const plotW = cw - padL - padR;
-  const charts = [{title: mk.idxName, bars: mk.idxBars}];
-  if(mk.boardBars) charts.push({title: '板块指数', bars: mk.boardBars});
+  const boardBars = sl ? sl.boardBars : mk.boardBars;
+  const charts = [{title: mk.idxName, bars: idxBars}];
+  if(boardBars) charts.push({title: '板块指数', bars: boardBars});   // 板块指数不显示板块名
 
   const top0 = 46, bottomGap = 10;
   const blockH = (ch - top0 - bottomGap) / charts.length;
   const subH = Math.min(58, blockH*0.22), gap = 6;
 
-  // 共享视窗
+  // 共享视窗（基于切片后的总长度，回看历史时不超过当前对局时刻）
   const view = G.mktView;
-  const total = mk.idxBars.length;
+  const total = idxBars.length;
   view.count = Math.min(Math.max(view.count|0, 20), Math.max(20, total));
   view.back = Math.min(Math.max(view.back|0, 0), Math.max(0, total - view.count));
   const count = view.count, back = view.back;
@@ -2987,7 +3200,7 @@ function drawMarket(){
 
     let hi=-Infinity, lo=Infinity;
     for(const b of bars){ if(b.h>hi)hi=b.h; if(b.l<lo)lo=b.l; }
-    const maSeries = G.mainMa ? CFG.maPeriods.map(p=> calcMA(bars,p)) : null;
+    const maSeries = G.mainMa ? G.maPeriods.map(p=> calcMA(bars,p)) : null;
     const boll = G.mainBoll ? calcBOLL(bars) : null;
     const extend = v => { if(v!==null){ if(v>hi)hi=v; if(v<lo)lo=v; } };
     if(maSeries) maSeries.forEach(ms=> ms.forEach(extend));
@@ -3032,9 +3245,9 @@ function drawMarket(){
       else { ctx.fillRect(x-barW/2, top, barW, hh); }
     }
     // 主图指标
-    const maCols = ['#f5a623','#4fc3f7','#e040fb'];
+    const maCols = ['#f5a623','#4fc3f7','#e040fb','#a0f5a6','#f5a6a6'];
     if(G.mainMa){
-      CFG.maPeriods.forEach((p,pi)=>{
+      G.maPeriods.forEach((p,pi)=>{
         const ms = maSeries[pi];
         ctx.strokeStyle = maCols[pi]; ctx.lineWidth=1.1;
         ctx.beginPath(); let st=false;
@@ -3190,7 +3403,11 @@ document.querySelectorAll('.btn.tf').forEach(b=> b.addEventListener('click', ()=
 }));
 document.querySelectorAll('.btn.lev').forEach(b=> b.addEventListener('click', ()=>{
   document.querySelectorAll('.btn.lev').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active'); G.lev = parseInt(b.dataset.lev); updateUI(); draw();
+  b.classList.add('active');
+  const lev = parseInt(b.dataset.lev);
+  if(G) G.lev = lev;
+  const s = loadSettings(); s.lev = lev; saveSettings(s);   // 持久化杠杆设置
+  updateUI(); draw();
 }));
 document.getElementById('nextBtn').addEventListener('click', stepNext);
 document.getElementById('startBtn').addEventListener('click', startTrade);
@@ -3844,6 +4061,15 @@ function setPage(p){
 }
 document.getElementById('navTrade').addEventListener('click', ()=> setPage('trade'));
 document.getElementById('navMarket').addEventListener('click', ()=> setPage('market'));
+/* ===== 设置栏（左侧导航第三个入口） ===== */
+document.getElementById('navSettings').addEventListener('click', openSettings);
+document.getElementById('setX').addEventListener('click', closeSettings);
+document.getElementById('setBack').addEventListener('click', closeSettings);
+document.getElementById('setSave').addEventListener('click', saveSettingsForm);
+document.getElementById('setCenter').addEventListener('click', ()=>{ closeSettings(); openCenter(); });
+document.querySelectorAll('#setMa .ma-chip').forEach(b=>{
+  b.addEventListener('click', ()=> toggleMaChip(parseInt(b.dataset.ma)));
+});
 
 /* ===== 指标折叠面板 ===== */
 document.getElementById('indToggle').addEventListener('click', ()=>{
@@ -3905,13 +4131,16 @@ document.querySelectorAll('.om-types .ind-chip').forEach(c=>{
     }
   });
 });
-document.querySelectorAll('.om-quick .btn[data-opx]').forEach(b=>{
-  b.addEventListener('click', ()=>{
-    const p = G.started ? curPrice() : 0;
-    if(!p) return;
-    const x = parseFloat(b.dataset.opx);
-    document.getElementById('omPrice').value = (omType==='TP' ? p*(1+x) : p*(1-x)).toFixed(2);
-  });
+document.getElementById('omQuick').addEventListener('click', e=>{
+  const b = e.target.closest('button[data-opx]');
+  if(!b) return;
+  const p = G.started ? curPrice() : 0;
+  if(!p) return;
+  const x = parseFloat(b.dataset.opx);
+  document.getElementById('omPrice').value = (omType==='TP' ? p*(1+x) : p*(1-x)).toFixed(2);
+});
+document.querySelectorAll('.om-frac .btn[data-omfrac]').forEach(b=>{
+  b.addEventListener('click', ()=> setOmLots(parseFloat(b.dataset.omfrac)));
 });
 document.getElementById('omList').addEventListener('click', e=>{
   const btn = e.target.closest('button[data-oact]');
@@ -3964,6 +4193,11 @@ document.addEventListener('keydown', (e)=>{
   // 个人中心弹窗打开中：Esc 关闭
   if(document.getElementById('centerMask').classList.contains('show')){
     if(e.code === 'Escape') closeCenter();
+    return;
+  }
+  // 设置弹窗打开中：Esc 关闭
+  if(document.getElementById('settingsMask').classList.contains('show')){
+    if(e.code === 'Escape') closeSettings();
     return;
   }
   // 提示弹窗打开中：Esc/Enter/空格 关闭
