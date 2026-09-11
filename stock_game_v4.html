@@ -331,6 +331,21 @@
   .sh-avatar img { width: 100%; height: 100%; object-fit: cover; }
   .sh-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
   .sh-actions .btn { margin-top: 0; }
+  /* 筹码分布按钮 */
+  .chip-btn {
+    position: absolute; bottom: 76px; right: 80px; z-index: 8;
+    background: rgba(0,0,0,0.55); color: #fff; border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer;
+    backdrop-filter: blur(2px); transition: background .15s;
+  }
+  .chip-btn:hover { background: rgba(0,0,0,0.75); }
+  .chip-btn.active { background: rgba(255,140,0,0.7); border-color: rgba(255,180,80,0.9); }
+  /* 筹码分布区 */
+  .chip-area { position: absolute; top: 0; right: 0; bottom: 0; width: 25%;
+    background: rgba(20,22,28,0.92); border-left: 1px solid rgba(255,255,255,0.1); z-index: 5;
+    display: none;
+  }
+  .chip-area.show { display: block; }
 </style>
 </head>
 <body>
@@ -383,14 +398,13 @@
       <!-- 大盘页：顶部统计条 -->
       <div class="mkt-stats" id="mktStats"></div>
       <div class="mkt-loading" id="mktLoading">大盘行情加载中…</div>
+      <button class="chip-btn" id="chipBtn">筹码分布</button>
+      <div class="chip-area" id="chipArea"></div>
       <!-- 大盘页：指数选择 + 周期切换栏（仅大盘页显示） -->
       <div class="mkt-bar" id="mktBar">
         <span class="lbl">指数</span>
         <select id="mktIdxSel" class="mkt-sel"></select>
         <span class="mkt-tf-group" id="mktTfGroup">
-          <button class="btn mtf" data-tf="15">15m</button>
-          <button class="btn mtf" data-tf="30">30m</button>
-          <button class="btn mtf" data-tf="60">1h</button>
           <button class="btn mtf active" data-tf="D">日</button>
           <button class="btn mtf" data-tf="W">周</button>
           <button class="btn mtf" data-tf="M">月</button>
@@ -599,10 +613,25 @@
               <div class="sub" style="text-align:left;font-weight:700;color:#e6e9f0;">历史记录</div>
               <div id="histList" style="max-height:300px;overflow-y:auto;margin-top:6px;"></div>
             </div>
-            <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;">
+            <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
               <button class="btn next" id="centerBack">返回游戏</button>
               <button class="btn" id="logoutBtn">退出登录</button>
+              <button class="btn share" id="shareGameBtn" title="分享游戏给好友">📢 分享游戏</button>
             </div>
+          </div>
+        </div>
+      </div>
+      <!-- 分享游戏弹窗：二维码 + 链接，为新玩家提供入口 -->
+      <div class="mask" id="shareGameMask">
+        <div class="dialog" style="min-width:300px;max-width:90vw;">
+          <button class="dlg-x" id="sgX">×</button>
+          <h2 style="font-size:18px;">分享游戏</h2>
+          <div class="sub" style="font-size:13px;color:var(--txt2);margin-bottom:10px;">扫码即可开始你的随机交易局</div>
+          <canvas id="sgQrCanvas" width="220" height="220" style="display:block;margin:0 auto 12px;border:1px solid var(--border);border-radius:10px;background:#fff;"></canvas>
+          <div class="trade-line" style="font-size:12px;justify-content:center;"><span id="sgUrlText" style="color:var(--txt3);word-break:break-all;text-align:center;">--</span></div>
+          <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
+            <button class="btn pos" id="sgCopy">复制链接</button>
+            <button class="btn" id="sgSaveQr">保存二维码</button>
           </div>
         </div>
       </div>
@@ -761,7 +790,7 @@ let G = null; // 全局游戏状态
 
 /* ===================== 真实行情（东方财富免费API · JSONP跨域） ===================== */
 const EM_LIST_TTL = 7*24*3600*1000;   // 股票列表缓存7天
-const EM_LIST_KEY = 'em_stocklist_v2';   // v2：含 f2 最新价，供资金预过滤
+const EM_LIST_KEY = 'em_stocklist_v3';   // v3：含 f2 最新价（资金预过滤）+ f20 总市值（宽基成分排名近似）
 
 /* ===================== 个人中心 / 历史记录（localStorage） ===================== */
 const SG_HIST_KEY = 'sg_history_v1';        // {recent:[最多20条], archived:[最多100条]}
@@ -928,8 +957,8 @@ async function fetchStockList(){
     if(c && c.list && c.list.length > 100 && Date.now() - c.t < EM_LIST_TTL) return c.list;
   }catch(e){}
   const fs = 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23';
-  // f2=最新价（用于按资金预过滤“买得起1手”的股票）
-  const q = '/api/qt/clist/get?po=0&np=1&fltt=2&invt=2&fid=f12&fs=' + fs + '&fields=f2,f12,f13,f14';
+  // f2=最新价（用于按资金预过滤“买得起1手”的股票），f20=总市值（用于宽基成分排名近似）
+  const q = '/api/qt/clist/get?po=0&np=1&fltt=2&invt=2&fid=f12&fs=' + fs + '&fields=f2,f12,f13,f14,f20';
   // 先取第一页拿到总数，再受限并发（6路）拉取其余页（服务端每页上限100条）
   const first = await jsonpRace(q + '&pn=1&pz=100');
   const total = first && first.data ? first.data.total : 0;
@@ -948,7 +977,9 @@ async function fetchStockList(){
       if(/^[NC]/.test(name)) continue;   // 剔除上市初期新股（N首日 / C前5日）
       // f2 最新价（停牌股为 '-'，置 null 表示未知、不参与预过滤拦截）
       const price = (typeof it.f2 === 'number' && it.f2 > 0) ? it.f2 : null;
-      list.push({code: String(code), mkt: mkt, name: String(name).replace(/\s+/g,''), price: price});
+      // f20 总市值（缺失为 null，宽基排名近似时跳过该股）
+      const mktcap = (typeof it.f20 === 'number' && it.f20 > 0) ? it.f20 : null;
+      list.push({code: String(code), mkt: mkt, name: String(name).replace(/\s+/g,''), price: price, mktcap: mktcap});
     }
   };
   push(arr1);
@@ -1057,6 +1088,83 @@ const BROAD_INDICES = [
   {secid:'1.000852', code:'000852', mkt:1, name:'中证1000'},
 ];
 
+/* ===== 宽基指数成分判定：只显示"当前对局股票属于其成分"的宽基指数 =====
+   规则：
+   - 上证指数：代码以 '6' 开头（上交所：600/601/603/605/688）
+   - 深证成指：以 '0' 或 '3' 开头（深交所：000/001/002/300/301，近似）
+   - 创业板指：以 '300'/'301' 开头（近似）
+   - 科创50：以 '688' 开头（近似）
+   - 沪深300：东财 clist fs=b:BK0500 真实成分名单（f12=代码）；失败则按市值排名≤300
+   - 中证500/中证1000：全A按 f20 总市值降序排名近似（官方 500=301~800、1000=801~1800，边界放宽）
+   失败兜底：300/500/1000 全部 true（宁可多显示不可漏显示）。
+   结果缓存 localStorage（sg_broad_mem_v1），7天有效且同一股票代码复用。 */
+const BROAD_MEM_KEY = 'sg_broad_mem_v1';
+const BROAD_MEM_TTL = 7*864e5;
+let broadMemCache = null;   // 内存缓存 {t, stockCode, map}
+
+/* 纯前缀规则（300/500/1000 无法用前缀判定，默认放开） */
+function broadPrefixMap(stockCode){
+  const code = String(stockCode || '');
+  return {
+    '000001': code[0] === '6',                              // 上证指数
+    '399001': code[0] === '0' || code[0] === '3',           // 深证成指
+    '399006': code.indexOf('300') === 0 || code.indexOf('301') === 0,  // 创业板指
+    '000688': code.indexOf('688') === 0,                    // 科创50
+    '000300': true,                                         // 沪深300（待真实名单/排名修正）
+    '000905': true,                                         // 中证500（待市值排名修正）
+    '000852': true,                                         // 中证1000（待市值排名修正）
+  };
+}
+
+/* 拉取沪深300真实成分代码集合（东财板块 BK0500），失败返回 null */
+async function fetchHS300Members(){
+  const d = await jsonpRace('/api/qt/clist/get?pn=1&pz=500&po=1&np=1&fltt=2&invt=2&fid=f3&fs=b:BK0500&fields=f12',
+    null, {timeout: 8000});
+  const diff = d && d.data && d.data.diff;
+  if(!diff) return null;
+  const arr = Array.isArray(diff) ? diff : Object.keys(diff).map(k=>diff[k]);
+  const set = new Set(arr.map(it => String(it.f12)));
+  return set.size >= 200 ? set : null;   // 名单明显过少视为异常
+}
+
+/* 返回 {指数code: bool} 映射；任何异常都回退到前缀规则（300/500/1000 放开），绝不抛出 */
+async function loadBroadMembership(stockCode){
+  stockCode = String(stockCode || '');
+  const fallback = broadPrefixMap(stockCode);
+  // 1) 内存缓存 / localStorage 缓存（7天，同一股票代码复用）
+  try{
+    if(broadMemCache && broadMemCache.stockCode === stockCode && broadMemCache.map) return broadMemCache.map;
+    const c = JSON.parse(localStorage.getItem(BROAD_MEM_KEY) || 'null');
+    if(c && c.stockCode === stockCode && c.map && Date.now() - c.t < BROAD_MEM_TTL){
+      broadMemCache = c;
+      return c.map;
+    }
+  }catch(e){}
+  const map = fallback;
+  // 2) 沪深300：真实成分名单
+  let hs300 = null;
+  try{ hs300 = await fetchHS300Members(); }catch(e){ hs300 = null; }
+  if(hs300) map['000300'] = hs300.has(stockCode);
+  // 3) 中证500/1000：全A总市值排名近似（拿不到市值数据则保持兜底 true）
+  try{
+    const list = await fetchStockList();
+    const withCap = list.filter(s => s.mktcap > 0).sort((a,b) => b.mktcap - a.mktcap);
+    if(withCap.length > 2000){
+      let rank = -1;
+      for(let i=0;i<withCap.length;i++){ if(withCap[i].code === stockCode){ rank = i+1; break; } }
+      if(rank > 0){
+        if(!hs300) map['000300'] = rank <= 300;          // 无名单时用排名兜底
+        map['000905'] = rank >= 301 && rank <= 900;      // 官方301~800，上界放宽
+        map['000852'] = rank >= 801 && rank <= 2000;     // 官方801~1800，边界放宽
+      }
+    }
+  }catch(e){ /* 市值数据不可用：500/1000 保持 true */ }
+  // 4) 写缓存
+  broadMemCache = {t: Date.now(), stockCode: stockCode, map: map};
+  try{ localStorage.setItem(BROAD_MEM_KEY, JSON.stringify(broadMemCache)); }catch(e){}
+  return map;
+}
+
 /* 后台拉取本局对应的大盘指数/板块数据，失败静默（大盘页显示加载失败） */
 async function kickFetchMarket(r){
   const code = r.pick.code;
@@ -1065,18 +1173,24 @@ async function kickFetchMarket(r){
               idxLast:null, idxChg:0, up:0, down:0, ping:0, zt:0, dt:0, sim:false, dayStats:{} };
   G.mkt = mk;
   try{
+    // 0) 宽基成分过滤：只拉取"当前对局股票属于其成分"的宽基指数（对局期间即过滤）
+    let mem = null;
+    try{ mem = await loadBroadMembership(code); }catch(e){ mem = null; }
+    const broadList = BROAD_INDICES.filter(bi => !mem || mem[bi.code] !== false);
     // 1) 宽基指数日K（全部并行）
-    const broadBars = await Promise.all(BROAD_INDICES.map(bi =>
+    const broadBars = await Promise.all(broadList.map(bi =>
       fetchDailyKline(bi.secid, bi.code, bi.mkt).then(bars => ({...bi, type:'宽基', bars:{D: bars}}))
         .catch(() => ({...bi, type:'宽基', bars:{D: null}}))
     ));
     broadBars.forEach(bi => { if(bi.bars.D) mk.idxList.push(bi); });
     if(!mk.idxList.length) throw new Error('宽基指数K线全部失败');
 
-    // 主指数（按股票所在市场选上证/深证）用于派生涨跌家数
-    const primaryIdx = code[0] === '6' ? mk.idxList.find(x=>x.code==='000001') : mk.idxList.find(x=>x.code==='399001');
-    mk.idxBars = primaryIdx ? primaryIdx.bars.D : mk.idxList[0].bars.D;
-    mk.idxName = primaryIdx ? primaryIdx.name : mk.idxList[0].name;
+    // 主指数（按股票所在市场选上证/深证）用于派生涨跌家数；
+    // 原首选不在过滤结果中时，取过滤后列表第一个
+    const preferredCode = code[0] === '6' ? '000001' : '399001';
+    const primaryIdx = mk.idxList.find(x=>x.code===preferredCode) || mk.idxList.find(x=>x.type==='宽基') || mk.idxList[0];
+    mk.idxBars = primaryIdx.bars.D;
+    mk.idxName = primaryIdx.name;
 
     // 2) 行业板块（f127=行业板块名 → 反查 BK 代码 → 拉日K，不显示板块名）
     try{
@@ -1102,7 +1216,8 @@ async function kickFetchMarket(r){
       const conceptNames = conceptsStr ? conceptsStr.split(/[,;]/).map(s=>s.replace(/\s+/g,'')).filter(s=>s && s.length<20) : [];
       if(conceptNames.length){
         const concepts = await fetchConceptList();
-        for(const cn of conceptNames.slice(0, 6)){  // 最多取6个概念
+        // 涉及的概念全部显示（不再限制数量）；顺序拉取避免并发过高，单个失败跳过
+        for(const cn of conceptNames){
           const bk = concepts.find(b => b.name === cn || b.name.indexOf(cn) >= 0 || cn.indexOf(b.name) >= 0);
           if(bk){
             try{
@@ -1220,19 +1335,31 @@ function synthMarketData(){
     return out;
   }
   const mk = G.mkt || {};
-  mk.idxList = [
-    {secid:'1.000001', code:'000001', mkt:1, name:'上证指数', type:'宽基', bars:{D: synth(0.35, 0.012, 3200, 200)}},
-    {secid:'0.399001', code:'399001', mkt:0, name:'深证成指', type:'宽基', bars:{D: synth(0.4, 0.014, 11000, 180)}},
-    {secid:'0.399006', code:'399006', mkt:0, name:'创业板指', type:'宽基', bars:{D: synth(0.5, 0.018, 2200, 120)}},
-    {secid:'1.000688', code:'000688', mkt:1, name:'科创50', type:'宽基', bars:{D: synth(0.55, 0.02, 1000, 80)}},
-    {secid:'1.000300', code:'000300', mkt:1, name:'沪深300', type:'宽基', bars:{D: synth(0.45, 0.013, 4000, 150)}},
-    {secid:'1.000905', code:'000905', mkt:1, name:'中证500', type:'宽基', bars:{D: synth(0.5, 0.015, 5500, 100)}},
-    {secid:'1.000852', code:'000852', mkt:1, name:'中证1000', type:'宽基', bars:{D: synth(0.6, 0.017, 7000, 80)}},
+  // 宽基合成参数表（与真实拉取一致：按成分归属过滤，300/500/1000 在前缀规则下保留）
+  const broadSyn = [
+    {secid:'1.000001', code:'000001', mkt:1, name:'上证指数', p:[0.35, 0.012, 3200, 200]},
+    {secid:'0.399001', code:'399001', mkt:0, name:'深证成指', p:[0.4, 0.014, 11000, 180]},
+    {secid:'0.399006', code:'399006', mkt:0, name:'创业板指', p:[0.5, 0.018, 2200, 120]},
+    {secid:'1.000688', code:'000688', mkt:1, name:'科创50',   p:[0.55, 0.02, 1000, 80]},
+    {secid:'1.000300', code:'000300', mkt:1, name:'沪深300', p:[0.45, 0.013, 4000, 150]},
+    {secid:'1.000905', code:'000905', mkt:1, name:'中证500', p:[0.5, 0.015, 5500, 100]},
+    {secid:'1.000852', code:'000852', mkt:1, name:'中证1000',p:[0.6, 0.017, 7000, 80]},
+  ];
+  // 真实对局兜底：按股票前缀过滤宽基；纯模拟行情（无股票代码）：全部保留
+  const mem = G.real ? broadPrefixMap(G.real.code) : null;
+  const broadList = broadSyn.filter(bi => !mem || mem[bi.code] !== false)
+    .map(bi => ({secid:bi.secid, code:bi.code, mkt:bi.mkt, name:bi.name, type:'宽基',
+                 bars:{D: synth(bi.p[0], bi.p[1], bi.p[2], bi.p[3])}}));
+  mk.idxList = broadList.concat([
     {secid:'90.BK0000', code:'BK0000', mkt:90, name:'所属行业', type:'行业', bars:{D: synth(0.7, 0.016, 1200, 40)}},
     {secid:'90.BK0001', code:'BK0001', mkt:90, name:'相关概念', type:'概念', bars:{D: synth(0.75, 0.018, 1500, 50)}},
-  ];
+  ]);
   mk.cur = 0; mk.tf = 'D'; mk.sim = true;
-  mk.idxBars = mk.idxList[0].bars.D; mk.idxName = mk.idxList[0].name;
+  // 主指数与真实逻辑一致：按股票所在市场优选上证/深证，否则取过滤后第一个
+  const stockCode = G.real ? String(G.real.code) : '';
+  const preferredCode = stockCode[0] === '6' ? '000001' : (stockCode ? '399001' : '000001');
+  const primary = broadList.find(x=>x.code===preferredCode) || broadList[0];
+  mk.idxBars = primary.bars.D; mk.idxName = primary.name;
   mk.dayStats = {};
   for(const b of mk.idxBars) mk.dayStats[b.date] = deriveDayStats(b);
   const last = mk.idxBars[mk.idxBars.length-1];
@@ -1470,6 +1597,9 @@ async function newGame(autoStart, replayData){
     real: null,           // 真实行情：{code,name,daily,tradeDays,marketRet,marketType}
     lastSnap: null,       // 上一局的快照（供结算画面复盘/存档按钮使用）
     review: null,         // 复盘快照（非null时进入复盘视图）
+    showChips: false,         // 对局页筹码分布展开状态
+    mktShowChips: false,      // 大盘页筹码分布展开状态
+    chipCache: {},             // 筹码分布计算缓存 {key: {peaks, avgCost, profitPct, concentration90}}
   };
   // 弹窗与按钮初始状态（后台筛选就绪前禁止开始）
   document.getElementById('startMask').classList.add('show');
@@ -1615,6 +1745,17 @@ function agg(tf, endIdx){
 function effBar(){
   if(!G || G.curTickIdx < 0) return 0;
   return Math.floor(G.curTickIdx / CFG.dayTicks) - G.tradeDay0;
+}
+/* 对局进行中（G.started && !G.over 且非复盘视图）隐藏真实日历日期：
+   仅影响界面展示，内部逻辑/切片/回放/快照一律不变；
+   结算结果页、历史记录页、复盘页（G.over 或 G.review）照常显示日期 */
+function maskDate(){
+  return !!(G && G.started && !G.over && !G.review);
+}
+/* 掩码时间标签：'YYYY-MM-DD HH:MM' → 'HH:MM'；模拟行情的'第N交易日 HH:MM'原样保留 */
+function maskTimeLabel(s){
+  if(!maskDate() || s == null) return s;
+  return String(s).replace(/^\d{4}-\d{2}-\d{2}\s*/, '');
 }
 /* tick -> 历史时间标签（9:30-11:30/13:00-15:00，午休跳过） */
 function tickTime(tick){
@@ -2090,7 +2231,7 @@ function showOrderEvent(evt){
   const title = document.getElementById('oeTitle');
   title.textContent = (isTP ? '止盈' : '止损') + '条件单已触发';
   title.style.color = isTP ? '#f5c864' : '#7ea6ff';
-  document.getElementById('oeTime').textContent = first.time.label;
+  document.getElementById('oeTime').textContent = maskTimeLabel(first.time.label);
   document.getElementById('oePrice').textContent = evt.rows.length ? evt.rows.map(r=>r.px.toFixed(2)).join(' / ') + ' 元' : '--';
   document.getElementById('oeQty').textContent = filled.length
       ? filled.map(r=>fmtQty(r.qty) + ' 股').join('，') + (filled.some(r=>r.remain>0) ? '（剩余数量条件单继续有效）' : '')
@@ -2155,8 +2296,8 @@ function renderOrderList(){
       + '<div class="om-info">触发价 <b>' + o.triggerPrice.toFixed(2) + '</b> · 数量 <b>'
       + (o.qtyFilled > 0 ? fmtQty(o.qtyFilled) + ' / ' : '') + fmtQty(o.qty) + '</b> 股'
       + (o.lotRef ? ' · 指定批次' : ' · 全部可卖') + '<br>'
-      + '<span style="color:#8a93a5;">创建 ' + o.createTime + ' @ ' + o.createPrice.toFixed(2)
-      + (o.triggerTime ? ' · 触发 ' + o.triggerTime : '') + '</span></div>'
+      + '<span style="color:#8a93a5;">创建 ' + maskTimeLabel(o.createTime) + ' @ ' + o.createPrice.toFixed(2)
+      + (o.triggerTime ? ' · 触发 ' + maskTimeLabel(o.triggerTime) : '') + '</span></div>'
       + '<span class="om-st ' + st.c + '">' + st.t + '</span>'
       + '<span class="om-acts">' + acts + '</span></div>';
   }).join('');
@@ -2808,7 +2949,7 @@ function updateUI(){
       // 条件单触发暂停：所有周期停在触发历史时刻
       const tt = tickTime(G.curTickIdx);
       phaseTag.className = 'phase-tag close';
-      phaseTag.textContent = tt.date + ' ' + tt.time + ' · 条件单暂停 · ' + deal.toFixed(2);
+      phaseTag.textContent = (maskDate() ? tt.time : (tt.date + ' ' + tt.time)) + ' · 条件单暂停 · ' + deal.toFixed(2);
     }else if(G.phase === 'open'){
       phaseTag.className = 'phase-tag open';
       phaseTag.textContent = (G.curBar+1) + '/' + CFG.settleDayBars + ' · 开盘 · ' + deal.toFixed(2);
@@ -2979,7 +3120,9 @@ function draw(){
   const mainY0 = padT, mainY1 = padT + mainH;
   const volY0 = mainY1 + volGap, volY1 = volY0 + volH;
 
-  const plotW = cw - padL - padR;
+  const chipShow = G.showChips;
+  const chipAreaW = chipShow ? (cw - padL - padR) * 0.25 : 0;
+  const plotW = (cw - padL - padR) - chipAreaW;
 
   // 价格范围（含主图指标）
   let hi=-Infinity, lo=Infinity;
@@ -3138,8 +3281,8 @@ function draw(){
       ctx.fillRect(cw-padR, mouse.y-9, padR-2, 18);
       ctx.fillStyle='#fff'; ctx.textAlign='left'; ctx.textBaseline='middle';
       ctx.fillText(priceTxt, cw-padR+5, mouse.y);
-      // 竖线信息框：日期 + 开高低收
-      const dateStr = b.date ? b.date : (tfName(G.tf)+' #'+idx);
+      // 竖线信息框：日期 + 开高低收（对局进行中隐藏真实日期，用"周期 #序号"替代）
+      const dateStr = maskDate() ? (tfName(G.tf)+' #'+idx) : (b.date ? b.date : (tfName(G.tf)+' #'+idx));
       const rows = [['日期', dateStr], ['开盘', b.o.toFixed(2)], ['最高', b.h.toFixed(2)], ['最低', b.l.toFixed(2)], ['收盘', b.c.toFixed(2)]];
       const rowH = 17, pw = 132, ph = rows.length * rowH + 8;
       let bx = x + 12; if(bx + pw > cw - padR) bx = x - 12 - pw;
@@ -3174,6 +3317,25 @@ function draw(){
   // 回看历史时显示"回到最新"按钮
   const tl = document.getElementById('toLatest');
   if(tl) tl.style.display = (back>0 && !G.over) ? '' : 'none';
+
+  // 筹码分布（对局页）：跟随游标所在K线
+  if(chipShow){
+    let useIdx = bars.length - 1;  // 默认最后一根
+    if(mouse.in && mouse.x >= padL && mouse.x < padL + plotW){
+      const barIdx = Math.floor((mouse.x - padL) / bw);
+      if(barIdx >= 0 && barIdx < bars.length) useIdx = barIdx;
+    }
+    if(!G.chipCache) G.chipCache = {};
+    const cacheKey = (bars[useIdx] ? bars[useIdx].date : '') + '|' + G.tf;
+    let cd = G.chipCache[cacheKey];
+    if(!cd){
+      cd = calcChipDist(bars, useIdx, 60);
+      G.chipCache[cacheKey] = cd;
+    }
+    if(cd){
+      drawChipDist(ctx, padL + plotW, mainY0, chipAreaW, mainH, cd, cd.curPrice, lo, hi);
+    }
+  }
 }
 
 /* 副图通用绘制：VOL / MACD / KDJ / RSI
@@ -3240,6 +3402,144 @@ function drawSubIndicator(bars, sub, P){
   }
 }
 
+/* ===================== 筹码分布（三角分布法自算） ===================== */
+/* 计算指定 K 线的筹码分布
+   bars: K线数组 [{date,o,h,l,c,v}, ...]
+   targetIdx: 目标K线索引（计算这根K线当天的筹码分布）
+   lookback: 回溯天数（默认60）
+   返回 {peaks:[{price,percent}], avgCost, profitPct, concentration90, curPrice} */
+function calcChipDist(bars, targetIdx, lookback=60){
+  if(!bars || !bars.length || targetIdx < 0 || targetIdx >= bars.length) return null;
+  const start = Math.max(0, targetIdx - lookback);
+  // 流通股本估算：用首日价格 × 1e8（10亿股估算）
+  const floatShares = Math.max(1e8, bars[start].c * 1e8);
+  // 筹码分布字典：price -> 筹码量
+  const dist = {};
+  for(let i = start; i <= targetIdx; i++){
+    const b = bars[i];
+    if(!b || b.h == null || b.l == null) continue;
+    // 当日新成交筹码量
+    const newChips = (b.v || 0);
+    if(newChips <= 0) continue;
+    // 衰减系数：历史筹码按换手率衰减
+    const turnover = Math.min(0.99, newChips / floatShares);
+    const decay = 1 - turnover;
+    // 衰减已有筹码
+    for(const p in dist){ dist[p] *= decay; }
+    // 当日新筹码按三角分布分配到 [low, high]，峰值在 avg=(h+l+c)/3
+    const lo = b.l, hi = b.h;
+    const avg = (b.h + b.l + b.c) / 3;
+    if(hi <= lo) {
+      // 一字板，全部堆在收盘价
+      const p = b.c.toFixed(2);
+      dist[p] = (dist[p] || 0) + newChips;
+    } else {
+      // 三角分布：在 [lo, avg] 线性增长，[avg, hi] 线性减少
+      // 用 50 个价格bin
+      const bins = 50;
+      for(let j = 0; j < bins; j++){
+        const t = j / (bins - 1);  // 0..1
+        const price = lo + (hi - lo) * t;
+        // 三角权重：峰值在 avg 处
+        let w;
+        if(price <= avg){
+          w = (price - lo) / (avg - lo);
+        } else {
+          w = (hi - price) / (hi - avg);
+        }
+        w = Math.max(0, w);
+        const p = price.toFixed(2);
+        dist[p] = (dist[p] || 0) + newChips * w / bins * 2;  // *2 因为三角面积归一
+      }
+    }
+  }
+  // 归一化
+  let total = 0;
+  for(const p in dist) total += dist[p];
+  if(total <= 0) return null;
+  const peaks = [];
+  for(const p in dist){
+    peaks.push({price: +p, percent: dist[p] / total});
+  }
+  peaks.sort((a, b) => a.price - b.price);
+  // 当前价（目标K线收盘价）
+  const curPrice = bars[targetIdx].c;
+  // 获利比例（价格 <= curPrice 的筹码占比）
+  let profitPct = 0;
+  for(const pk of peaks){ if(pk.price <= curPrice) profitPct += pk.percent; else break; }
+  // 平均成本（筹码加权平均价）
+  let avgCost = 0;
+  for(const pk of peaks) avgCost += pk.price * pk.percent;
+  // 90%集中度：90%筹码所在价格区间宽度 / 均价
+  let cum = 0, p5 = null, p95 = null;
+  for(const pk of peaks){
+    cum += pk.percent;
+    if(p5 === null && cum >= 0.05) p5 = pk.price;
+    if(p95 === null && cum >= 0.95) p95 = pk.price;
+  }
+  const concentration90 = (p5 !== null && p95 !== null && avgCost > 0) ? (p95 - p5) / avgCost * 100 : 0;
+  return {peaks, avgCost, profitPct: profitPct*100, concentration90, curPrice};
+}
+
+/* 绘制筹码分布区
+   ctx: canvas 2d context
+   x, y, w, h: 筹码分布区位置和尺寸
+   cd: calcChipDist 返回值
+   curPrice: 当前K线收盘价（用于价格对比线）
+   yMin, yMax: 价格范围（与K线 Y 轴一致） */
+function drawChipDist(ctx, x, y, w, h, cd, curPrice, yMin, yMax){
+  if(!cd || !cd.peaks || !cd.peaks.length) return;
+  ctx.save();
+  // 背景
+  ctx.fillStyle = 'rgba(20,22,28,0.92)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.strokeRect(x, y, w, h);
+  // 价格 Y 轴映射：yMin -> y+h, yMax -> y
+  const priceToY = p => y + h - (p - yMin) / (yMax - yMin) * h;
+  // 找最大占比（用于柱状归一化）
+  let maxPct = 0;
+  for(const pk of cd.peaks) if(pk.percent > maxPct) maxPct = pk.percent;
+  if(maxPct <= 0) { ctx.restore(); return; }
+  const barMaxW = w * 0.85;
+  // 绘制筹码峰图（横向柱状）
+  for(const pk of cd.peaks){
+    const py = priceToY(pk.price);
+    const bw = pk.percent / maxPct * barMaxW;
+    const color = pk.price <= curPrice ? 'rgba(255,80,80,0.65)' : 'rgba(80,200,120,0.65)';
+    ctx.fillStyle = color;
+    ctx.fillRect(x + w - bw - 4, py - 1, bw, 2);  // 每个价位一根2px高的横向柱
+  }
+  // 价格对比线（当前K线收盘价水平虚线）
+  const cpy = priceToY(curPrice);
+  ctx.strokeStyle = 'rgba(255,200,0,0.9)';
+  ctx.setLineDash([4, 3]);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, cpy);
+  ctx.lineTo(x + w, cpy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // 文本指标（顶部）
+  ctx.fillStyle = '#ddd';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'left';
+  const lines = [
+    '获利比例: ' + cd.profitPct.toFixed(1) + '%',
+    '平均成本: ' + cd.avgCost.toFixed(2),
+    '90%集中度: ' + cd.concentration90.toFixed(1) + '%',
+  ];
+  for(let i = 0; i < lines.length; i++){
+    ctx.fillText(lines[i], x + 6, y + 14 + i * 14);
+  }
+  // 模拟字样（右下角）
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('模拟', x + w - 6, y + h - 6);
+  ctx.restore();
+}
+
 /* ===================== 大盘页绘制 ===================== */
 function drawMarket(){
   const mk = G.mkt;
@@ -3299,7 +3599,7 @@ function drawMarket(){
       + '<span class="mkt-chip">涨停 <b class="up">' + st.zt + '</b></span>'
       + '<span class="mkt-chip">跌停 <b class="down">' + st.dt + '</b></span>'
       + (mk.sim ? '<span class="mkt-chip">模拟数据</span>' : '')
-      + '<span class="mkt-chip" style="color:#9aa0aa;">截至 ' + (curBar.date || '--') + '</span>';
+      + (maskDate() ? '' : '<span class="mkt-chip" style="color:#9aa0aa;">截至 ' + (curBar.date || '--') + '</span>');
   }
 
   // 当前选中指数周期 K 线为空（正在拉取）
@@ -3434,7 +3734,9 @@ function sliceBarsByDate(bars, curDate){
 /* 单图绘制（抽出原 charts.forEach 内的单图绘制逻辑，单图填满整个 chart 区域） */
 function drawMarketChart(title, all){
   const padL = 8, padR = 64;
-  const plotW = cw - padL - padR;
+  const chipShow = G.mktShowChips;
+  const chipAreaW = chipShow ? (cw - padL - padR) * 0.25 : 0;
+  const plotW = (cw - padL - padR) - chipAreaW;
   const top0 = 76, bottomGap = 10;   // top0=76 给 mkt-stats(10-36) + mkt-bar(38-64) 两行留空间
   const blockH = ch - top0 - bottomGap;   // 单图填满
   const subH = Math.min(58, blockH*0.22), gap = 6;
@@ -3539,7 +3841,7 @@ function drawMarketChart(title, all){
         ctx.fillStyle='#fff'; ctx.textAlign='left'; ctx.textBaseline='middle';
         ctx.fillText(hoverPrice.toFixed(2), cw-padR+5, mouse.y);
       } else ctx.setLineDash([]);
-      const rows = [['日期', b.date||'--'], ['开盘', b.o.toFixed(2)], ['最高', b.h.toFixed(2)], ['最低', b.l.toFixed(2)], ['收盘', b.c.toFixed(2)]];
+      const rows = [['日期', maskDate() ? '--' : (b.date||'--')], ['开盘', b.o.toFixed(2)], ['最高', b.h.toFixed(2)], ['最低', b.l.toFixed(2)], ['收盘', b.c.toFixed(2)]];
       const rowH = 16, pw = 126, ph = rows.length*rowH+8;
       let bx = x+12; if(bx+pw>cw-padR) bx = x-12-pw;
       let by = Math.min(Math.max(mouse.y-ph/2, mainY0+2), volY1-ph-2);
@@ -3557,6 +3859,25 @@ function drawMarketChart(title, all){
 
   const tl = document.getElementById('toLatest');
   if(tl) tl.style.display = back>0 ? '' : 'none';
+
+  // 筹码分布（大盘页）：跟随游标所在K线
+  if(chipShow){
+    let useIdx = bars.length - 1;  // 默认最后一根
+    if(mouse.in && mouse.x >= padL && mouse.x < padL + plotW){
+      const barIdx = Math.floor((mouse.x - padL) / bw);
+      if(barIdx >= 0 && barIdx < bars.length) useIdx = barIdx;
+    }
+    if(!G.chipCache) G.chipCache = {};
+    const cacheKey = (bars[useIdx] ? bars[useIdx].date : '') + '|' + (G.mkt ? G.mkt.tf : 'D') + '|' + title;
+    let cd = G.chipCache[cacheKey];
+    if(!cd){
+      cd = calcChipDist(bars, useIdx, 60);
+      G.chipCache[cacheKey] = cd;
+    }
+    if(cd){
+      drawChipDist(ctx, padL + plotW, mainY0, chipAreaW, mainY1 - mainY0, cd, cd.curPrice, lo, hi);
+    }
+  }
 }
 
 function tfName(tf){ return {M:'月',W:'周',D:'日','240':'4h','60':'1h','30':'30m','15':'15m'}[tf]; }
@@ -3676,6 +3997,20 @@ document.getElementById('mktIdxSel').addEventListener('change', e=>{
     G.mktView.back = 0;
     draw();
   }
+});
+/* 筹码分布按钮 */
+document.getElementById('chipBtn').addEventListener('click', ()=>{
+  if(!G) return;
+  if(G.page === 'market'){
+    G.mktShowChips = !G.mktShowChips;
+  } else {
+    G.showChips = !G.showChips;
+  }
+  const btn = document.getElementById('chipBtn');
+  const active = G.page === 'market' ? G.mktShowChips : G.showChips;
+  btn.classList.toggle('active', active);
+  btn.textContent = active ? '筹码分布 ✓' : '筹码分布';
+  draw();
 });
 document.querySelectorAll('.btn.lev').forEach(b=> b.addEventListener('click', ()=>{
   document.querySelectorAll('.btn.lev').forEach(x=>x.classList.remove('active'));
@@ -4300,6 +4635,45 @@ document.getElementById('guestBtn').addEventListener('click', guestEnter);
 document.getElementById('getCode').addEventListener('click', sendCode);
 document.getElementById('doLogin').addEventListener('click', doLogin);
 document.getElementById('logoutBtn').addEventListener('click', logout);
+/* ===== 分享游戏入口（个人中心右下角，为新玩家提供便捷入口） ===== */
+function drawGameQR(){
+  const c = document.getElementById('sgQrCanvas');
+  if(!c || typeof QR === 'undefined') return;
+  const ctx2 = c.getContext('2d');
+  ctx2.fillStyle = '#fff'; ctx2.fillRect(0,0,c.width,c.height);
+  const mods = QR.gen(SHARE_URL);
+  const n = mods.length;
+  const cell = Math.floor(c.width / n);
+  const off = Math.floor((c.width - cell * n) / 2);
+  ctx2.fillStyle = '#000';
+  for(let y=0;y<n;y++) for(let x=0;x<n;x++) if(mods[y][x]) ctx2.fillRect(off+x*cell, off+y*cell, cell, cell);
+}
+function openShareGame(){
+  document.getElementById('sgUrlText').textContent = SHARE_URL;
+  document.getElementById('shareGameMask').classList.add('show');
+  setTimeout(drawGameQR, 30);
+}
+function closeShareGame(){ document.getElementById('shareGameMask').classList.remove('show'); }
+document.getElementById('shareGameBtn').addEventListener('click', openShareGame);
+document.getElementById('sgX').addEventListener('click', closeShareGame);
+document.getElementById('sgCopy').addEventListener('click', ()=>{
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(SHARE_URL).then(()=>showTip('链接已复制到剪贴板')).catch(()=>showTip('复制失败，请手动选择'));
+  } else { showTip('当前浏览器不支持自动复制，请手动选择链接'); }
+});
+document.getElementById('sgSaveQr').addEventListener('click', ()=>{
+  const c = document.getElementById('sgQrCanvas');
+  try{
+    const a = document.createElement('a');
+    a.href = c.toDataURL('image/png');
+    a.download = 'stock-game-qrcode.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    showTip('二维码图片已保存');
+  }catch(e){ showTip('保存失败，请右键图片另存为'); }
+});
+document.getElementById('shareGameMask').addEventListener('click', e=>{
+  if(e.target.id === 'shareGameMask') closeShareGame();
+});
 document.querySelectorAll('#centerMain .btn.pos[data-cap]').forEach(b=>{
   b.addEventListener('click', ()=>setCapital(b.dataset.cap));
 });
@@ -4334,6 +4708,12 @@ function setPage(p){
   document.getElementById('navMarket').classList.toggle('active', p === 'market');
   const barEl = document.getElementById('mktBar');
   if(barEl) barEl.classList.toggle('show', p === 'market' && G && G.mkt && G.mkt.ready);
+  const chipBtn = document.getElementById('chipBtn');
+  if(chipBtn){
+    const active = p === 'market' ? G.mktShowChips : G.showChips;
+    chipBtn.classList.toggle('active', active);
+    chipBtn.textContent = active ? '筹码分布 ✓' : '筹码分布';
+  }
   mouse.in = false;
   draw(); updateUI();
 }
