@@ -3191,10 +3191,8 @@ cvs.addEventListener('touchend', e=>{
   } else if(touch.mode === 'drag'){
     cvs.classList.remove('grabbing');
   } else if(touch.mode === 'pending'){
-    if(Date.now() - touch.startTime < LONG_PRESS_MS){
-      if(G) curView().back = 0;
-      draw();
-    }
+    // 短按不做任何事，避免误触丢失历史浏览位置
+    // 用户请点击底部「回到最新」按钮
   }
   if(e.touches.length === 0){
     touch.active = false;
