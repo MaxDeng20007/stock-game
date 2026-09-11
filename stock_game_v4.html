@@ -4641,12 +4641,12 @@ function drawGameQR(){
   if(!c || typeof QR === 'undefined') return;
   const ctx2 = c.getContext('2d');
   ctx2.fillStyle = '#fff'; ctx2.fillRect(0,0,c.width,c.height);
-  const mods = QR.gen(SHARE_URL);
-  const n = mods.length;
+  const q = QR.gen(SHARE_URL);
+  const n = q.size;
   const cell = Math.floor(c.width / n);
   const off = Math.floor((c.width - cell * n) / 2);
   ctx2.fillStyle = '#000';
-  for(let y=0;y<n;y++) for(let x=0;x<n;x++) if(mods[y][x]) ctx2.fillRect(off+x*cell, off+y*cell, cell, cell);
+  for(let y=0;y<n;y++) for(let x=0;x<n;x++) if(q.modules[y][x]) ctx2.fillRect(off+x*cell, off+y*cell, cell, cell);
 }
 function openShareGame(){
   document.getElementById('sgUrlText').textContent = SHARE_URL;
