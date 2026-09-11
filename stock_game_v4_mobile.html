@@ -259,11 +259,15 @@
   .trade-frac .btn { flex: 1; padding: 8px 0; font-size: 14px; }
 
   /* ============ 大盘页 ============ */
-  .mkt-stats {
-    position: absolute; top: 8px; left: 8px; right: 8px; z-index: 5;
-    display: none; gap: 6px; flex-wrap: wrap; pointer-events: none;
+  /* 大盘页顶部覆盖层：垂直堆叠 stats + bar，避免硬编码 top 导致重叠 */
+  .mkt-overlay {
+    position: absolute; top: 8px; left: 8px; right: 8px; z-index: 6;
+    display: none; flex-direction: column; gap: 6px;
   }
-  .mkt-stats.show { display: flex; }
+  .mkt-overlay.show { display: flex; }
+  .mkt-stats {
+    display: flex; gap: 6px; flex-wrap: wrap; pointer-events: none;
+  }
   .mkt-chip {
     background: rgba(255,255,255,.9); border: 1px solid var(--border);
     border-radius: 8px; padding: 5px 10px; font-size: 12px; color: var(--txt2);
@@ -277,7 +281,6 @@
   }
   .mkt-loading.show { display: flex; }
   .mkt-bar {
-    position: absolute; top: 40px; left: 8px; right: 8px; z-index: 6;
     display: none; align-items: center; gap: 8px; flex-wrap: wrap;
   }
   .mkt-bar.show { display: flex; }
@@ -405,19 +408,21 @@
   <div class="chart-area">
     <canvas id="chart"></canvas>
     <!-- 大盘页元素 -->
-    <div class="mkt-stats" id="mktStats"></div>
+    <div class="mkt-overlay" id="mktOverlay">
+      <div class="mkt-stats" id="mktStats"></div>
+      <div class="mkt-bar" id="mktBar">
+        <span class="lbl">指数</span>
+        <select id="mktIdxSel" class="mkt-sel"></select>
+        <span class="mkt-tf-group" id="mktTfGroup">
+          <button class="btn mtf active" data-tf="D">日</button>
+          <button class="btn mtf" data-tf="W">周</button>
+          <button class="btn mtf" data-tf="M">月</button>
+        </span>
+      </div>
+    </div>
     <div class="mkt-loading" id="mktLoading">大盘行情加载中…</div>
     <button class="chip-btn" id="chipBtn">筹码分布</button>
     <div class="chip-area" id="chipArea"></div>
-    <div class="mkt-bar" id="mktBar">
-      <span class="lbl">指数</span>
-      <select id="mktIdxSel" class="mkt-sel"></select>
-      <span class="mkt-tf-group" id="mktTfGroup">
-        <button class="btn mtf active" data-tf="D">日</button>
-        <button class="btn mtf" data-tf="W">周</button>
-        <button class="btn mtf" data-tf="M">月</button>
-      </span>
-    </div>
     <!-- 浮动条 -->
     <div class="end-float" id="endFloat">
       <button class="btn long" id="floatAgain">再来一局</button>
@@ -2931,10 +2936,10 @@ function prevDayClose(){
 function updateUI(){
   if(!G || !G.tickOHLC.length) return;   // 行情未就绪时跳过（此时按钮均禁用）
   const p = curPrice();
-  // 移动端 header：股票名
+  // 移动端 header：股票名（对局进行中掩码为「对局中」，结算/复盘/历史页才显示真名）
   const mhStock = document.getElementById('mhStock');
   if(mhStock){
-    mhStock.textContent = (G.real ? (G.real.name || '') + (G.real.code ? ' (' + G.real.code + ')' : '') : '模拟股票');
+    mhStock.textContent = maskDate() ? '对局中' : (G.real ? (G.real.name || '') + (G.real.code ? ' (' + G.real.code + ')' : '') : '模拟股票');
   }
   // 顶栏放大版价格（不带"当前价"标签）
   document.getElementById('curPrice').textContent = p.toFixed(2);
@@ -3209,13 +3214,13 @@ function draw(){
   if(!G || !G.tickOHLC.length) return;   // 行情未就绪时不绘制
   if(cw===0 || ch===0) return; // 画布尺寸未就绪（resize 前），跳过首帧
   ctx.clearRect(0,0,cw,ch);
-  const statsEl = document.getElementById('mktStats');
+  const overlayEl = document.getElementById('mktOverlay');
   if(G.page === 'market'){
-    if(statsEl) statsEl.classList.add('show');
+    if(overlayEl) overlayEl.classList.add('show');
     drawMarket();
     return;
   }
-  if(statsEl) statsEl.classList.remove('show');
+  if(overlayEl) overlayEl.classList.remove('show');
   const loadingEl = document.getElementById('mktLoading');
   if(loadingEl) loadingEl.classList.remove('show');
 
@@ -4789,8 +4794,8 @@ function setPage(p){
   document.getElementById('navTrade').classList.toggle('active', p === 'trade');
   document.getElementById('navMarket').classList.toggle('active', p === 'market');
   updateTabbar(p);
-  const barEl = document.getElementById('mktBar');
-  if(barEl) barEl.classList.toggle('show', p === 'market' && G && G.mkt && G.mkt.ready);
+  const overlayEl = document.getElementById('mktOverlay');
+  if(overlayEl) overlayEl.classList.toggle('show', p === 'market');
   const chipBtn = document.getElementById('chipBtn');
   if(chipBtn){
     const active = p === 'market' ? G.mktShowChips : G.showChips;
