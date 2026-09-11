@@ -623,10 +623,25 @@
             <div class="sub" style="text-align:left;font-weight:700;">历史记录</div>
             <div id="histList" style="max-height:300px;overflow-y:auto;margin-top:6px;"></div>
           </div>
-          <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;">
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
             <button class="btn next" id="centerBack">返回游戏</button>
             <button class="btn" id="logoutBtn">退出登录</button>
+            <button class="btn share" id="shareGameBtn" title="分享游戏给好友">📢 分享游戏</button>
           </div>
+        </div>
+      </div>
+    </div>
+    <!-- 分享游戏弹窗：二维码 + 链接，为新玩家提供入口 -->
+    <div class="mask" id="shareGameMask">
+      <div class="dialog" style="min-width:300px;max-width:90vw;">
+        <button class="dlg-x" id="sgX">×</button>
+        <h2 style="font-size:18px;">分享游戏</h2>
+        <div class="sub" style="font-size:13px;color:var(--txt2);margin-bottom:10px;">扫码即可开始你的随机交易局</div>
+        <canvas id="sgQrCanvas" width="220" height="220" style="display:block;margin:0 auto 12px;border:1px solid var(--border);border-radius:10px;background:#fff;"></canvas>
+        <div class="trade-line" style="font-size:12px;justify-content:center;"><span id="sgUrlText" style="color:var(--txt3);word-break:break-all;text-align:center;">--</span></div>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
+          <button class="btn pos" id="sgCopy">复制链接</button>
+          <button class="btn" id="sgSaveQr">保存二维码</button>
         </div>
       </div>
     </div>
@@ -4761,6 +4776,45 @@ document.getElementById('guestBtn').addEventListener('click', guestEnter);
 document.getElementById('getCode').addEventListener('click', sendCode);
 document.getElementById('doLogin').addEventListener('click', doLogin);
 document.getElementById('logoutBtn').addEventListener('click', logout);
+/* ===== 分享游戏入口（个人中心右下角，为新玩家提供便捷入口） ===== */
+function drawGameQR(){
+  const c = document.getElementById('sgQrCanvas');
+  if(!c || typeof QR === 'undefined') return;
+  const ctx2 = c.getContext('2d');
+  ctx2.fillStyle = '#fff'; ctx2.fillRect(0,0,c.width,c.height);
+  const mods = QR.gen(SHARE_URL);
+  const n = mods.length;
+  const cell = Math.floor(c.width / n);
+  const off = Math.floor((c.width - cell * n) / 2);
+  ctx2.fillStyle = '#000';
+  for(let y=0;y<n;y++) for(let x=0;x<n;x++) if(mods[y][x]) ctx2.fillRect(off+x*cell, off+y*cell, cell, cell);
+}
+function openShareGame(){
+  document.getElementById('sgUrlText').textContent = SHARE_URL;
+  document.getElementById('shareGameMask').classList.add('show');
+  setTimeout(drawGameQR, 30);
+}
+function closeShareGame(){ document.getElementById('shareGameMask').classList.remove('show'); }
+document.getElementById('shareGameBtn').addEventListener('click', openShareGame);
+document.getElementById('sgX').addEventListener('click', closeShareGame);
+document.getElementById('sgCopy').addEventListener('click', ()=>{
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(SHARE_URL).then(()=>showTip('链接已复制到剪贴板')).catch(()=>showTip('复制失败，请手动长按选择'));
+  } else { showTip('当前浏览器不支持自动复制，请手动选择链接'); }
+});
+document.getElementById('sgSaveQr').addEventListener('click', ()=>{
+  const c = document.getElementById('sgQrCanvas');
+  try{
+    const a = document.createElement('a');
+    a.href = c.toDataURL('image/png');
+    a.download = 'stock-game-qrcode.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    showTip('二维码图片已保存');
+  }catch(e){ showTip('保存失败，请长按二维码图片保存'); }
+});
+document.getElementById('shareGameMask').addEventListener('click', e=>{
+  if(e.target.id === 'shareGameMask') closeShareGame();
+});
 document.querySelectorAll('#centerMain .btn.pos[data-cap]').forEach(b=>{
   b.addEventListener('click', ()=>setCapital(b.dataset.cap));
 });
